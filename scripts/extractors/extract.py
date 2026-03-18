@@ -70,29 +70,24 @@ def extract_web(url: str) -> dict:
 
 
 def extract_pdf(url: str) -> dict:
-    """PDF extractor. Downloads PDF via Playwright and extracts text."""
+    """PDF extractor. Downloads PDF via httpx and extracts text with pymupdf."""
     import tempfile
+    import httpx
     import pymupdf
-    from playwright.sync_api import sync_playwright
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+    resp = httpx.get(
+        url,
+        follow_redirects=True,
+        timeout=60,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        },
+    )
+    resp.raise_for_status()
 
-        with page.expect_download() as download_info:
-            page.goto(url, timeout=60000)
-
-        try:
-            download = download_info.value
-            tmp_path = download.path()
-        except Exception:
-            # Direct PDF URL, not a download trigger. Fetch with request context.
-            resp = page.request.get(url)
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-                f.write(resp.body())
-                tmp_path = f.name
-        finally:
-            browser.close()
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        f.write(resp.content)
+        tmp_path = f.name
 
     doc = pymupdf.open(tmp_path)
     pages = []
@@ -234,8 +229,10 @@ def detect_type(url: str) -> str:
         return "reddit"
     if "github.com" in domain:
         return "github"
-    if "arxiv.org" in domain:
+    if "arxiv.org" in domain and "/pdf/" in parsed.path:
         return "pdf"
+    if "arxiv.org" in domain:
+        return "web"
     if parsed.path.lower().endswith(".pdf"):
         return "pdf"
     if "youtube.com" in domain or "youtu.be" in domain:
