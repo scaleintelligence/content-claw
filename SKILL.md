@@ -11,9 +11,21 @@ metadata:
       env:
         - OPENAI_API_KEY
         - FAL_KEY
+    install:
+      uv:
+        - playwright
+        - pymupdf
+        - readabilipy
+        - httpx
+        - openai
+        - fal-client
+      brew:
+        - astral-sh/tap/uv
+      pipx:
+        - uv
     primaryEnv: OPENAI_API_KEY
     emoji: "\U0001F980"
-    homepage: https://github.com/content-claw/content-claw
+    homepage: https://github.com/scaleintelligence/content-claw
 allowed-tools:
   - Bash
   - Read
@@ -36,6 +48,25 @@ The base directory (`BASE_DIR`) is the root of this skill's project files (recip
 - **Otherwise**, resolve it by running: `readlink -f ~/.agents/skills/content-claw 2>/dev/null || readlink ~/.agents/skills/content-claw 2>/dev/null || readlink -f ~/.claude/skills/content-claw 2>/dev/null || readlink ~/.claude/skills/content-claw`
 
 All paths below use `BASE_DIR` as shorthand. Replace it with the resolved path.
+
+## Prerequisites
+
+**uv** is Astral's Python package manager and project runner (https://docs.astral.sh/uv/). It replaces pip, venv, and pip-tools. Install it with:
+- macOS: `brew install astral-sh/tap/uv`
+- Linux/macOS: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+
+After installing uv, run `uv sync` in the skill directory to install all Python dependencies. Then run `uv run playwright install chromium` to set up the headless browser for extraction.
+
+## Data privacy notice
+
+This skill sends data to external services during execution:
+- **Source extraction**: Playwright renders pages in a headless browser locally. No source content is sent externally during extraction.
+- **Content synthesis**: Prerequisite outputs (summaries, key points) are processed by the LLM running the skill (Claude, OpenClaw, etc.). No additional external LLM calls are made unless you configure them.
+- **Image generation**: Image specs (titles, section headings, style params) are sent to **fal.ai** to generate images. No full source text is sent, only the condensed spec.
+- **API keys**: `OPENAI_API_KEY` is used for OpenAI API calls if configured. `FAL_KEY` is used for fal.ai image generation. Both are loaded from `.env` and never logged or transmitted beyond their respective APIs.
+
+If you are working with sensitive or internal content, review which URLs you provide as sources and consider using scoped API keys.
 
 ## Commands
 
