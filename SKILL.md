@@ -1,7 +1,7 @@
 ---
 name: content-claw
 description: |
-  Automated content generation engine. Transform source material (papers, podcasts, case studies) into platform-ready content using recipes and brand graphs. Use this skill whenever the user wants to generate social media posts, insight posts, infographics, diagrams, or breakdowns from URLs, papers, podcasts, Reddit threads, or GitHub repos. Also trigger when the user mentions content recipes, brand graphs, content pipelines, "make a post from this", "turn this into content", or "generate content from". Requires uv and OPENAI_API_KEY in .env.
+  Automated content generation engine. Transform source material (papers, podcasts, case studies) into platform-ready content using recipes and brand graphs. Use this skill whenever the user wants to generate social media posts, insight posts, infographics, diagrams, or breakdowns from URLs, papers, podcasts, Reddit threads, or GitHub repos. Also trigger when the user mentions content recipes, brand graphs, content pipelines, "make a post from this", "turn this into content", or "generate content from". Requires uv and FAL_KEY in .env for image generation.
 version: 0.0.1
 metadata:
   openclaw:
@@ -9,7 +9,6 @@ metadata:
       bins:
         - uv
       env:
-        - OPENAI_API_KEY
         - FAL_KEY
     install:
       uv:
@@ -17,13 +16,12 @@ metadata:
         - pymupdf
         - readabilipy
         - httpx
-        - openai
         - fal-client
       brew:
         - astral-sh/tap/uv
       pipx:
         - uv
-    primaryEnv: OPENAI_API_KEY
+    primaryEnv: FAL_KEY
     emoji: "\U0001F980"
     homepage: https://github.com/scaleintelligence/content-claw
 allowed-tools:
@@ -52,19 +50,23 @@ All paths below use `BASE_DIR` as shorthand. Replace it with the resolved path.
 ## Prerequisites
 
 **uv** is Astral's Python package manager and project runner (https://docs.astral.sh/uv/). It replaces pip, venv, and pip-tools. Install it with:
-- macOS: `brew install astral-sh/tap/uv`
-- Linux/macOS: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+- macOS (recommended): `brew install astral-sh/tap/uv`
+- pip/pipx: `pipx install uv`
+- Linux/macOS (alternative): `curl -LsSf https://astral.sh/uv/install.sh | sh` (review the script at https://astral.sh/uv/install.sh before running)
 
 After installing uv, run `uv sync` in the skill directory to install all Python dependencies. Then run `uv run playwright install chromium` to set up the headless browser for extraction.
+
+## File scope
+
+This skill only reads and writes files within `BASE_DIR`. Do not read, write, or search files outside of `BASE_DIR`. All recipe YAML files, agent prompts, brand graphs, content outputs, and scripts are within this directory. Never access the user's personal files, home directory, or any path outside the skill's project directory.
 
 ## Data privacy notice
 
 This skill sends data to external services during execution:
 - **Source extraction**: Playwright renders pages in a headless browser locally. No source content is sent externally during extraction.
-- **Content synthesis**: Prerequisite outputs (summaries, key points) are processed by the LLM running the skill (Claude, OpenClaw, etc.). No additional external LLM calls are made unless you configure them.
+- **Content synthesis**: Prerequisite outputs (summaries, key points) are processed by the host LLM running the skill (Claude, OpenClaw, NemoClaw). No external LLM calls are made. All text generation happens locally through the host agent.
 - **Image generation**: Image specs (titles, section headings, style params) are sent to **fal.ai** to generate images. No full source text is sent, only the condensed spec.
-- **API keys**: `OPENAI_API_KEY` is used for OpenAI API calls if configured. `FAL_KEY` is used for fal.ai image generation. Both are loaded from `.env` and never logged or transmitted beyond their respective APIs.
+- **API keys**: `FAL_KEY` is the only required key, used for fal.ai image generation. It is loaded from `.env` and never logged or transmitted beyond the fal.ai API.
 
 If you are working with sensitive or internal content, review which URLs you provide as sources and consider using scoped API keys.
 

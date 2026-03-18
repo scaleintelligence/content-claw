@@ -8,7 +8,6 @@ dependencies = [
     "pymupdf>=1.24",
     "readabilipy>=0.2",
     "playwright>=1.49",
-    "openai>=1.50",
     "fal-client>=0.5",
 ]
 
