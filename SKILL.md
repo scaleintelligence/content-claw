@@ -43,6 +43,7 @@ Users can invoke you with these commands:
 - `run <recipe-slug> <source-url> [--brand <brand-name>]` - Run a recipe on a source URL
 - `list recipes` - List all available recipes
 - `show recipe <slug>` - Show details of a specific recipe
+- `create recipe` - Create a new recipe via guided questions
 - `create brand <name>` - Create a new brand graph via guided questions
 - `show brand <name>` - Show a brand graph's current state
 - `history` - Show recent content generation runs
@@ -194,6 +195,151 @@ After showing the output, offer:
 - "Want me to adjust any of the specs and re-render?"
 - "Remix this for another platform?" (if recipe supports multiple platforms)
 - "Run another recipe on the same source?"
+
+## How to create a recipe
+
+When the user asks to create a recipe, walk them through the following questions. After each answer, confirm before moving on. If the user gives partial answers, fill in sensible defaults and show them for approval.
+
+### Question 1: Name and purpose
+
+Ask: "What should this recipe do? Give it a short name."
+
+From the answer, derive:
+- `name`: the human-readable name
+- `slug`: lowercase, hyphenated version (e.g. "Twitter Thread from Podcast" becomes `twitter-thread-from-podcast`)
+
+Confirm the slug with the user.
+
+### Question 2: Source type
+
+Ask: "What kind of source material does this recipe need?"
+
+Show the available types:
+- `research-paper`
+- `podcast`
+- `blog`
+- `case-study`
+- `github-repo`
+- `event-news`
+- `social-post`
+
+The user can pick one or more. Set `source_prerequisites.min_sources` to 1 unless they specify otherwise.
+
+### Question 3: Target platforms
+
+Ask: "What platforms should the output target?"
+
+Options: `linkedin`, `reddit`, `x`, `email`
+
+The user can pick one or more.
+
+### Question 4: Brand graph
+
+Ask: "Does this recipe need a brand graph? Brand graphs add voice, audience targeting, and visual identity."
+
+If yes, ask which layers are required: `identity`, `audience`, `strategy`, `visual`
+
+### Question 5: Prerequisites
+
+Suggest a default prerequisite pipeline based on the source type:
+
+- **research-paper/blog**: extract-text, summarize, generate-title, research-context
+- **podcast**: extract-text, extract-key-points, generate-title, research-context
+- **case-study/github-repo**: extract-text, extract-key-points, generate-title, research-context
+- **event-news**: extract-text, summarize, generate-title
+- **social-post**: extract-text, summarize
+
+Show the defaults and ask: "Keep these, or add/remove any?"
+
+Available actions: `extract-text`, `summarize`, `generate-title`, `extract-key-points`, `research-context`
+
+### Question 6: Content blocks
+
+Ask: "Now let's define the output blocks. Each block is a piece of content the recipe generates."
+
+For each block, ask:
+1. **Name**: e.g. "thread", "insight-post", "infographic"
+2. **Format**: `text` or `image`
+3. **Rules**: how it should read, length constraints, style notes (list of strings)
+4. **Agent**: use an existing agent or create a new one
+
+Show existing agents from `BASE_DIR/agents/`:
+- Text agents: `insight-post.md`, `breakdown.md`, `caption.md`, `case-study.md`, `roundup.md`
+- Image agents: `infographic.md`, `diagram.md`, `poster.md`
+
+If the user wants a new agent, create it (see "Creating a new agent" below).
+
+5. **Dependencies**: does this block depend on another block? (for ordering)
+
+After defining a block, ask: "Any more blocks?"
+
+### Question 7: Review and save
+
+Assemble the full recipe YAML and show it to the user. The format must match `BASE_DIR/recipes/_schema.yaml`:
+
+```yaml
+name: <name>
+slug: <slug>
+version: "0.3.2"
+status: draft
+priority: p1
+platforms:
+  - <platforms>
+private: false
+owner: null
+
+source_prerequisites:
+  min_sources: 1
+  source_types:
+    - <source_types>
+
+brand_graph:
+  required: <true|false>
+  required_layers: [<layers>]
+
+prerequisites:
+  - name: <step-name>
+    action: <action>
+    description: <description>
+
+blocks:
+  - name: <block-name>
+    format: <text|image>
+    sub_format: <sub-format>
+    agent: <agent-file.md>
+    depends_on: <list|null>
+    rules:
+      - <rule>
+    examples: []
+```
+
+Ask: "Does this look right? Want to change anything?"
+
+Once confirmed, save to `BASE_DIR/recipes/<slug>.yaml`.
+
+Tell the user: "Recipe saved. You can now run it with: `run <slug> <source-url>`"
+
+### Creating a new agent
+
+When the user needs a new agent prompt for a block:
+
+1. Ask: "Describe how this content should be structured. What sections should it have?"
+
+2. Create the agent file at `BASE_DIR/agents/<name>.md` following the two-phase pattern:
+
+**Phase 1: Generate spec** section with a JSON schema that captures the content structure. Every spec must include:
+- The content fields the user described (sections, items, steps, etc.)
+- A `platform` field
+- A `source` field for attribution
+- A `text_fallback` field with a plain-text rendering
+
+**Phase 2: Render to final text** section explaining how to turn the spec into platform-ready text.
+
+**Rules** section with the user's style/length/tone constraints.
+
+**Platform adaptation** section with per-platform guidance.
+
+3. Show the user the generated agent prompt and ask for approval before saving.
 
 ## How to list recipes
 
