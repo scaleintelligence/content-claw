@@ -22,7 +22,7 @@ metadata:
       pipx:
         - uv
     primaryEnv: FAL_KEY
-    emoji: "\U0001F980"
+    emoji: "\U0001F3A8"
     homepage: https://github.com/scaleintelligence/content-claw
 allowed-tools:
   - Bash
