@@ -83,6 +83,8 @@ Users can invoke you with these commands:
 - `show brand <name>` - Show a brand graph's current state
 - `discover topics <brand-name>` - Find trending topics for a brand using Exa, Reddit, and X
 - `setup creds <platform>` - Configure Reddit or X cookies for authenticated scraping
+- `publish <run-dir> <platform> [--subreddit <name>]` - Publish generated content to Reddit or X
+- `track <brand-name>` - Check engagement metrics on published content
 - `history` - Show recent content generation runs
 
 ## How to run a recipe
@@ -506,6 +508,91 @@ After saving all files, automatically run topic discovery for the new brand (see
 ## How to show a brand graph
 
 Read all YAML files from `BASE_DIR/brand-graphs/<brand-name>/` and display a formatted summary of each layer.
+
+## How to publish content
+
+When the user asks to publish content to Reddit or X:
+
+### Dry run first
+
+Always do a dry run before publishing. This shows the user exactly what will be posted:
+
+1. Run: `cd BASE_DIR && uv run scripts/publish.py <content-dir> <platform> --dry-run [--subreddit <name>]`
+2. Show the user the preview (title, content, platform, subreddit)
+3. Ask: "Does this look good? Ready to publish?"
+
+### Publishing to Reddit
+
+1. Requires Reddit cookies (see "How to set up platform credentials")
+2. Ask the user which subreddit to post to
+3. Run: `cd BASE_DIR && uv run scripts/publish.py <content-dir> reddit --subreddit <name> --reddit-cookie BASE_DIR/creds/reddit-cookies.json`
+4. The publisher adds UTM tracking to all links in the content automatically (utm_source=reddit, utm_medium=social, utm_campaign=<run-name>)
+5. Show the user the result and save the publish record
+
+### Publishing to X
+
+1. Requires X cookies (see "How to set up platform credentials")
+2. Content is trimmed to 280 chars. If there's an image_url from generation, mention it.
+3. Run: `cd BASE_DIR && uv run scripts/publish.py <content-dir> x --x-cookie BASE_DIR/creds/x-cookies.json`
+4. UTM tracking is added to any links
+5. Show the user the result
+
+### After publishing
+
+A publish record is saved to `<content-dir>/publish_records.json` with the platform, timestamp, status, and URL. This is used by the engagement tracker.
+
+## How to save run artifacts
+
+Every recipe run should save metadata alongside the content. After Step 9 (Assemble and output), save a `metadata.json` file in the run directory:
+
+```json
+{
+  "recipe": "<recipe-slug>",
+  "source_urls": ["<url1>", "<url2>"],
+  "brand": "<brand-name or null>",
+  "timestamp": "<ISO 8601>",
+  "blocks": [
+    {
+      "name": "<block-name>",
+      "format": "<text|image>",
+      "status": "<success|failed|placeholder>",
+      "model": "<image model used, if applicable>",
+      "output_file": "<filename>",
+      "spec_file": "<filename>"
+    }
+  ],
+  "publish_records": []
+}
+```
+
+This enables the `history` command and the engagement tracker.
+
+## How to track engagement
+
+When the user asks to track engagement or check how published content is performing:
+
+1. Run: `cd BASE_DIR && uv run scripts/track_engagement.py --brand BASE_DIR/brand-graphs/<brand-name>/ --reddit-cookie BASE_DIR/creds/reddit-cookies.json --x-cookie BASE_DIR/creds/x-cookies.json`
+
+2. The tracker visits each published URL and extracts:
+   - **Reddit**: upvotes, comment count, live/removed status
+   - **X**: likes, retweets, replies, views, live/removed status
+
+3. Present results to the user in a table:
+   - Post title/preview
+   - Platform
+   - Status (live/removed)
+   - Engagement metrics
+   - Time since publish
+
+4. The tracker automatically updates the brand graph's `feedback.yaml` with engagement data. This means future content generation benefits from knowing what performed well.
+
+5. **What to learn from the metrics**: If a topic got high engagement, suggest similar topics. If content was removed, flag the subreddit's rules and adjust the recipe's tone. If X posts got more retweets than likes, the content is shareable but not resonating deeply.
+
+### Automated tracking
+
+Suggest the user run tracking periodically: "Want me to check engagement on your published content? I can do this daily or weekly."
+
+For each check, the feedback layer accumulates insights. Over time this builds a picture of what works for the brand: which topics, platforms, formats, and tones drive the most engagement.
 
 ## Error handling
 
