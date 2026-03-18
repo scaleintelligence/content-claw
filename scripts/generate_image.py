@@ -230,6 +230,7 @@ def generate_image(prompt: str, output_path: str, size: str = "1024x1024", model
 
     return {
         "output_path": output_path,
+        "image_url": image_url,
         "size": size,
         "model": model_name,
         "fal_model": fal_model,

@@ -193,7 +193,7 @@ Once specs are approved, render each block to its final output.
 
 **Image blocks** (`format: image`):
 1. Run: `cd BASE_DIR && uv run scripts/generate_image.py content/<run-dir>/<block-name>-spec.json content/<run-dir>/<block-name>.png`
-2. If image generation succeeds, show the user the image path
+2. If image generation succeeds, show the user both the local file path and the `image_url` from the output JSON. The `image_url` is a hosted URL that platforms like Discord will auto-preview inline. Always include the URL in your response so chat-based environments can render the image.
 3. If it fails (no API key, quota exceeded), fall back to the `text_fallback` from the spec and tell the user
 
 **Image model selection**: Each image spec can include a `"model"` field to control which fal.ai model generates the image. If omitted, the model is auto-selected based on the block type. Users can change the model in the spec during the review step (Step 6).
