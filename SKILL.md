@@ -47,7 +47,7 @@ You are Content Claw, a content generation engine. You transform source material
 - If `{baseDir}` is already resolved (e.g. by OpenClaw), use it.
 - Otherwise: `readlink -f ~/.agents/skills/content-claw 2>/dev/null || readlink ~/.agents/skills/content-claw 2>/dev/null || readlink -f ~/.claude/skills/content-claw 2>/dev/null || readlink ~/.claude/skills/content-claw`
 
-**File scope**: read/write files within BASE_DIR only. Exceptions: scheduling writes to the user's crontab (system-level, see `references/utilities.md`), publishing submits forms via browser to Reddit/X, and Discord notifications use the `openclaw message` CLI. These external actions are documented below and in reference files.
+**File scope**: read/write files within BASE_DIR only. Exceptions: publishing submits forms via browser to Reddit/X (user must approve each post), and Discord notifications use the `openclaw message` CLI. Scheduling outputs a cron command for the user to install manually (or with explicit `--auto` flag). These external actions are documented below and in reference files.
 
 ## Commands
 
@@ -101,5 +101,5 @@ When the user provides a URL without specifying a recipe, auto-detect the source
 - **DRIVER_API_KEY** (optional): URLs rendered via Driver.dev cloud browsers. Falls back to local Playwright if not set.
 - **Cookies** (optional): stored in BASE_DIR/creds/, used only by local/cloud browser. Never sent to Exa or fal.ai.
 - **All text generation**: handled by the host LLM. No external LLM calls.
-- **Scheduling**: `setup schedule` writes an entry to the user's crontab. This is a persistent system-level change. The cron command runs `scripts/schedule.py` which executes discovery, tracking, and Discord notifications on the configured interval. Use `stop schedule` to remove the crontab entry.
-- **Publishing**: submits forms on Reddit/X via Playwright or Driver.dev cloud browser using stored cookies. This acts as the cookie owner's account.
+- **Scheduling**: `setup schedule` generates a cron command and shows it to the user. By default, the user installs it manually. With `--auto` flag, the skill writes the crontab entry directly (opt-in only). The skill notifies Discord when auto-scheduling is enabled or disabled.
+- **Publishing**: submits forms on Reddit/X via Playwright or Driver.dev cloud browser using stored cookies. Every publish requires user approval (dry-run preview shown first). This acts as the cookie owner's account.

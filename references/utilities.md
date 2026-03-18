@@ -9,16 +9,24 @@
 
 ## Scheduled discovery
 
-### Setup
-`cd BASE_DIR && uv run scripts/schedule.py setup BASE_DIR/brand-graphs/<brand>/ --interval <1h|30m|etc>`
+By default, the skill generates the cron command for the user to install manually. With `--auto`, the skill writes the crontab directly and notifies Discord.
 
-Writes a crontab entry. Each cycle: discovers topics, tracks engagement, checks alerts, sends summary to Discord #nemoclaw.
+### Setup (default, manual)
+1. Run: `cd BASE_DIR && uv run scripts/schedule.py setup BASE_DIR/brand-graphs/<brand>/ --interval <1h|30m|etc>`
+2. Show the `cron_command` and `manual_steps` from the output to the user
+3. User installs the cron themselves via `crontab -e`
+
+### Setup (auto, opt-in)
+If the user explicitly asks for automatic scheduling:
+`cd BASE_DIR && uv run scripts/schedule.py setup BASE_DIR/brand-graphs/<brand>/ --interval <1h|30m|etc> --auto`
+This writes the crontab entry directly and notifies Discord. Only use when the user explicitly opts in.
 
 ### Status
 `cd BASE_DIR && uv run scripts/schedule.py status`
 
 ### Stop
 `cd BASE_DIR && uv run scripts/schedule.py stop`
+If auto mode was used, this removes the crontab entry and notifies Discord. If manual, it shows instructions.
 
 ## Platform credentials
 

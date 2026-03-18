@@ -43,26 +43,50 @@ def setup_cron(brand_dir: str, interval: str = "1h"):
         "interval": interval,
         "interval_minutes": minutes,
         "cron_expr": cron_expr,
+        "cron_command": cmd,
         "created_at": datetime.now().isoformat(),
-        "status": "active",
+        "status": "pending_install",
     }
     SCHEDULE_FILE.write_text(json.dumps(config, indent=2))
 
     # Create logs dir
     (BASE / "logs").mkdir(exist_ok=True)
 
-    # Add to crontab
-    existing = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout
-    # Remove any existing content-claw entries
-    lines = [l for l in existing.splitlines() if "content-claw" not in l and "schedule.py" not in l]
-    lines.append(f"# content-claw scheduled discovery")
-    lines.append(cmd)
+    # Default: output cron command for user to install manually.
+    # With --auto flag: write crontab directly (user must opt in).
+    auto = "--auto" in sys.argv
 
-    proc = subprocess.run(["crontab", "-"], input="\n".join(lines) + "\n", capture_output=True, text=True)
-    if proc.returncode != 0:
-        return {"error": f"Failed to write crontab: {proc.stderr}"}
+    if auto:
+        existing = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout
+        lines = [l for l in existing.splitlines() if "content-claw" not in l and "schedule.py" not in l]
+        lines.append(f"# content-claw scheduled discovery")
+        lines.append(cmd)
+        proc = subprocess.run(["crontab", "-"], input="\n".join(lines) + "\n", capture_output=True, text=True)
+        if proc.returncode != 0:
+            return {"error": f"Failed to write crontab: {proc.stderr}"}
 
-    return {"status": "scheduled", "interval": interval, "cron": cron_expr, "brand_dir": str(brand_dir)}
+        config["status"] = "active"
+        SCHEDULE_FILE.write_text(json.dumps(config, indent=2))
+
+        # Notify Discord
+        try:
+            from notify import send_discord
+            send_discord(f"Content Claw scheduled discovery enabled for {Path(brand_dir).name} (every {interval}). Use `stop schedule` to disable.")
+        except Exception:
+            pass
+
+        return {"status": "active", "interval": interval, "cron": cron_expr, "brand_dir": str(brand_dir), "mode": "auto"}
+
+    return {
+        "status": "ready",
+        "interval": interval,
+        "cron": cron_expr,
+        "brand_dir": str(brand_dir),
+        "cron_command": cmd,
+        "manual_steps": f"Run: crontab -e\nAdd this line:\n{cmd}",
+        "mode": "manual",
+        "hint": "Pass --auto to install crontab automatically",
+    }
 
 
 def run_cycle(brand_dir: str):
@@ -167,18 +191,33 @@ def status():
 
 
 def stop():
-    """Remove the cron entry."""
-    existing = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout
-    lines = [l for l in existing.splitlines() if "content-claw" not in l and "schedule.py" not in l]
-    subprocess.run(["crontab", "-"], input="\n".join(lines) + "\n", capture_output=True, text=True)
-
+    """Remove the cron entry. Auto if --auto was used, manual instructions otherwise."""
+    was_auto = False
     if SCHEDULE_FILE.exists():
         config = json.loads(SCHEDULE_FILE.read_text())
+        was_auto = config.get("status") == "active"
         config["status"] = "stopped"
         config["stopped_at"] = datetime.now().isoformat()
         SCHEDULE_FILE.write_text(json.dumps(config, indent=2))
 
-    return {"status": "stopped"}
+    if was_auto:
+        existing = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout
+        lines = [l for l in existing.splitlines() if "content-claw" not in l and "schedule.py" not in l]
+        subprocess.run(["crontab", "-"], input="\n".join(lines) + "\n", capture_output=True, text=True)
+
+        try:
+            from notify import send_discord
+            send_discord("Content Claw scheduled discovery stopped.")
+        except Exception:
+            pass
+
+        return {"status": "stopped", "mode": "auto", "crontab": "removed"}
+
+    return {
+        "status": "stopped",
+        "mode": "manual",
+        "manual_steps": "Run: crontab -e\nRemove the line containing 'content-claw'",
+    }
 
 
 def main():
