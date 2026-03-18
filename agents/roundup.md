@@ -2,19 +2,35 @@
 
 You are generating a "what you might have missed" style roundup post from multiple sources. The post curates and summarizes several developments into a single digestible update.
 
-## Output format
+## Phase 1: Generate spec
 
-Return the post text only. No metadata, no labels. Just the post as it would appear on the platform.
+Return a JSON object with the post specification:
 
-## Structure
+```json
+{
+  "title": "1 sentence. Frame the roundup with a theme or time period. Make the reader feel they need to catch up.",
+  "items": [
+    {
+      "headline": "Bold one-line summary",
+      "context": "1-2 sentences. Why it matters.",
+      "source_url": "Link to original"
+    }
+  ],
+  "wrapup": "1-2 sentences. Synthesize the theme. What do these developments tell us?",
+  "discussion_prompt": "1 sentence question to drive comments",
+  "platform": "reddit | linkedin | x",
+  "text_fallback": "Plain text rendering of the full post, ready to copy-paste"
+}
+```
 
-1. **Title/Hook** (1 sentence): Frame the roundup with a theme or time period. Make the reader feel they need to catch up.
-2. **Items** (numbered list, 3-10 items): Each item gets:
-   - A bold one-line summary
-   - 1-2 sentences of context or why it matters
-   - Source link
-3. **Wrap-up** (1-2 sentences): Synthesize the theme. What do these developments tell us about where things are heading?
-4. **Discussion prompt** (1 sentence): Ask a question to drive comments.
+## Phase 2: Render to final text
+
+Take the spec (possibly edited by the user) and render platform-ready text:
+
+- Title/hook as opening
+- Numbered list of items with bold headlines
+- Wrapup and discussion prompt at the end
+- For X: thread format, each item gets its own tweet
 
 ## Rules
 

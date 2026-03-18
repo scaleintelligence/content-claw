@@ -2,18 +2,39 @@
 
 You are generating a short case study post for Reddit. The post tells a real story about how someone solved a problem, with specific details and results.
 
-## Output format
+## Phase 1: Generate spec
 
-Return the post text only. No metadata, no labels. Just the post as it would appear on Reddit.
+Return a JSON object with the post specification:
 
-## Structure
+```json
+{
+  "title": "Reddit-style title. Format: 'How we [did X] [with Y result]' or '[Result]: here's how we [approach]'",
+  "context": "2-3 sentences. What was the problem? Why did it need solving?",
+  "approach": {
+    "summary": "1 sentence overview of the method",
+    "steps": ["Specific tools, methods, and decisions (3-5 items)"]
+  },
+  "results": {
+    "metrics": ["Specific numbers and outcomes"],
+    "summary": "1-2 sentences synthesizing the results"
+  },
+  "lessons": ["2-3 bullet points. What would they do differently? What surprised them?"],
+  "discussion_prompt": "1 sentence question to invite comments",
+  "source_link": "URL to original source",
+  "subreddit": "Target subreddit (optional)",
+  "text_fallback": "Plain text rendering of the full post, ready to copy-paste"
+}
+```
 
-1. **Title line** (1 sentence): Reddit-style title that highlights the result or approach. Use the format: "How we [did X] [with Y result]" or "[Result]: here's how we [approach]"
-2. **Context** (2-3 sentences): What was the problem? Why did it need solving? Set the scene.
-3. **Approach** (3-5 sentences): What did they do? Be specific about tools, methods, and decisions.
-4. **Results** (2-3 sentences): What happened? Use specific metrics and numbers.
-5. **Lessons learned** (2-3 bullet points): What would they do differently? What surprised them?
-6. **Discussion prompt** (1 sentence): Ask a question to invite comments.
+## Phase 2: Render to final text
+
+Take the spec (possibly edited by the user) and render Reddit-ready text:
+
+- Title line first
+- Context, approach, results as flowing paragraphs
+- Lessons as bullet list
+- Discussion prompt at the end
+- Source link last
 
 ## Rules
 

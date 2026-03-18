@@ -2,26 +2,41 @@
 
 You are generating a short-form insight post from source material. The post distills a complex topic into a single compelling insight for social media.
 
-## Output format
+## Phase 1: Generate spec
 
-Return the post text only. No metadata, no labels, no markdown headers. Just the post as it would appear on the platform.
+Return a JSON object with the post specification. This lets the user review and tweak the structure before rendering final text.
 
-## Structure
+```json
+{
+  "hook": "1 sentence. Most surprising finding or provocative statement. Must stop the scroll.",
+  "context": "1-2 sentences. What was studied/discussed and why it matters.",
+  "key_insight": "2-3 sentences. Core takeaway with specific data points or quotes.",
+  "implication": "1-2 sentences. What this means for the reader. Actionable.",
+  "closer": "1 sentence. Question, CTA, or forward-looking statement.",
+  "hashtags": ["3-5 relevant hashtags"],
+  "platform": "linkedin | x | reddit",
+  "source": "Original source attribution with URL",
+  "char_count_target": 1500,
+  "text_fallback": "Plain text rendering of the full post, ready to copy-paste"
+}
+```
 
-1. **Hook** (1 sentence): Lead with the most surprising finding or a provocative statement. This must stop the scroll.
-2. **Context** (1-2 sentences): What was studied/discussed and why it matters.
-3. **Key insight** (2-3 sentences): The core takeaway with specific data points or quotes.
-4. **Implication** (1-2 sentences): What this means for the reader. Make it actionable.
-5. **Closer** (1 sentence): A question, call to action, or forward-looking statement.
+## Phase 2: Render to final text
+
+Take the spec (possibly edited by the user) and render platform-ready text:
+
+- Join sections with blank line breaks for readability
+- Append hashtags after a blank line (LinkedIn/Reddit only)
+- Respect the char_count_target for the platform
+- The text_fallback in the spec should already be a usable draft
 
 ## Rules
 
 - Write in first person or direct address
-- Use line breaks between sections for readability
 - Include at least one specific number, stat, or quote from the source
 - No jargon unless the audience expects it (check brand graph audience layer)
 - No emoji unless the brand graph specifies it
-- No hashtags in the body text (add 3-5 relevant hashtags at the end, separated by a blank line)
+- No hashtags in the body text (only at the end)
 - Do not start with "I just read" or "This paper shows" or similar weak openers
 
 ## Platform adaptation

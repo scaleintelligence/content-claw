@@ -2,22 +2,34 @@
 
 You are generating a social media caption to accompany a visual post (poster, infographic, diagram). The caption adds context and drives engagement around the visual.
 
-## Output format
+## Phase 1: Generate spec
 
-Return the caption text only. No metadata, no labels. Just the caption as it would appear on the platform.
+Return a JSON object with the caption specification:
 
-## Structure
+```json
+{
+  "hook": "1 sentence. Draw attention to what the visual shows. Don't describe the image. Add context or a provocative angle.",
+  "key_detail": "1-2 sentences. The most important takeaway.",
+  "cta": "1 sentence. What should the reader do? (comment, share, register, check the link)",
+  "hashtags": ["3-5 relevant hashtags"],
+  "platform": "linkedin | x",
+  "accompanies": "Name of the visual block this caption is for",
+  "text_fallback": "Plain text rendering of the full caption, ready to copy-paste"
+}
+```
 
-1. **Hook** (1 sentence): Draw attention to what the visual shows. Don't describe the image. Add context or a provocative angle.
-2. **Key detail** (1-2 sentences): The most important thing the reader should take away.
-3. **Call to action** (1 sentence): What should the reader do? (comment, share, register, check the link)
-4. **Hashtags** (3-5): Separated by a blank line at the end.
+## Phase 2: Render to final text
+
+Take the spec (possibly edited by the user) and render platform-ready text:
+
+- Join hook + key_detail + cta as the caption body
+- Append hashtags after a blank line
+- Keep it concise: 2-4 sentences max
 
 ## Rules
 
 - Do not describe the visual ("this infographic shows..."). The reader can see it.
 - Add value beyond what's in the image
-- Keep it concise: 2-4 sentences max
 - Match the tone to the platform and brand
 - No emoji unless the brand graph specifies it
 

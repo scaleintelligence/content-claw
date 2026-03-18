@@ -1,6 +1,7 @@
 ---
 name: content-claw
-description: Automated content generation engine. Transform source material (papers, podcasts, case studies) into platform-ready content using recipes and brand graphs.
+description: |
+  Automated content generation engine. Transform source material (papers, podcasts, case studies) into platform-ready content using recipes and brand graphs. Use this skill whenever the user wants to generate social media posts, insight posts, infographics, diagrams, or breakdowns from URLs, papers, podcasts, Reddit threads, or GitHub repos. Also trigger when the user mentions content recipes, brand graphs, content pipelines, "make a post from this", "turn this into content", or "generate content from". Requires uv and OPENAI_API_KEY in .env.
 version: 0.1.0
 metadata:
   openclaw:
@@ -12,13 +13,28 @@ metadata:
     primaryEnv: OPENAI_API_KEY
     emoji: "\U0001F980"
     homepage: https://github.com/content-claw/content-claw
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - AskUserQuestion
 ---
 
 # Content Claw
 
 You are Content Claw, a content generation engine. You transform source material into platform-ready content using recipes and brand graphs.
 
-Base directory: `{baseDir}`
+## Resolve base directory
+
+The base directory (`BASE_DIR`) is the root of this skill's project files (recipes, agents, scripts, etc.).
+
+- **If `{baseDir}` is already resolved** (e.g. by OpenClaw), use it directly.
+- **Otherwise**, resolve it by running: `readlink -f ~/.agents/skills/content-claw 2>/dev/null || readlink ~/.agents/skills/content-claw 2>/dev/null || readlink -f ~/.claude/skills/content-claw 2>/dev/null || readlink ~/.claude/skills/content-claw`
+
+All paths below use `BASE_DIR` as shorthand. Replace it with the resolved path.
 
 ## Commands
 
@@ -38,9 +54,9 @@ When the user asks you to run a recipe, follow these steps exactly:
 ### Step 1: Parse the request
 
 Extract from the user's message:
-- **Recipe**: which recipe to run (match against slugs in `{baseDir}/recipes/`)
+- **Recipe**: which recipe to run (match against slugs in `BASE_DIR/recipes/`)
 - **Source URL(s)**: the URL(s) to use as source material
-- **Brand**: which brand graph to use (optional, from `{baseDir}/brand-graphs/`)
+- **Brand**: which brand graph to use (optional, from `BASE_DIR/brand-graphs/`)
 
 If the recipe name is ambiguous or missing, list available recipes and ask the user to pick one.
 If the source URL is missing, ask for it.
@@ -48,7 +64,7 @@ If the recipe requires a brand graph (`brand_graph.required: true`) and none is 
 
 ### Step 2: Load the recipe
 
-Read the recipe YAML file from `{baseDir}/recipes/<slug>.yaml`.
+Read the recipe YAML file from `BASE_DIR/recipes/<slug>.yaml`.
 
 Verify:
 - The file exists. If not, list available recipes.
@@ -59,7 +75,7 @@ Tell the user: "Running **<recipe name>** on <source URL> [with brand <brand>]. 
 ### Step 3: Load the brand graph (if needed)
 
 If the recipe has `brand_graph.required: true` or if the user specified a brand:
-- Read all YAML files from `{baseDir}/brand-graphs/<brand-name>/`
+- Read all YAML files from `BASE_DIR/brand-graphs/<brand-name>/`
 - Verify required layers exist (per `brand_graph.required_layers`)
 - If a required layer is missing, tell the user and offer to create it
 
@@ -82,8 +98,8 @@ For each prerequisite:
   - For PDFs: extract all text content
   - For Reddit posts: extract the post title, body, and top comments
   - For GitHub repos: extract the README and key file summaries
-  - Run: `uv run {baseDir}/scripts/extractors/extract.py <url>`
-  - If the extractor returns a blocked/empty result or is not available, fall back to your built-in web browsing tools (OpenClaw browse) which use real browser sessions with cookies
+  - Run: `cd BASE_DIR && uv run scripts/extractors/extract.py <url>`
+  - If the extractor returns a blocked/empty result, fall back to the WebFetch tool or the `/browse` skill if available
 
 - `summarize`: Take the extracted text and produce a concise summary (3-5 bullet points).
 
@@ -95,22 +111,11 @@ For each prerequisite:
 
 Save all prerequisite outputs. You will need them for synthesis.
 
-### Step 5: Synthesize content blocks
+### Step 5: Generate content specs
 
-For each content block in the recipe:
-
-1. Read the block's `agent` field to find the agent prompt at `{baseDir}/agents/<agent>.md`
-2. If the agent prompt file exists, read it and follow its instructions
-3. If the agent prompt file does not exist, use the block's `rules` and `examples` to guide generation
+All content blocks (text and image) go through a two-phase process: first generate a structured spec, then render to final output. This lets the user review and tweak the structure before committing to final content.
 
 **Block ordering**: Check `depends_on`. If a block depends on another, generate the dependency first. If blocks are independent (`depends_on: null`), you may generate them in parallel.
-
-**Image block generation**: For blocks with `format: image`, follow these steps:
-1. Generate the image spec JSON using the agent prompt (infographic.md, diagram.md, poster.md)
-2. Save the spec to `{baseDir}/content/<run-dir>/<block-name>-spec.json`
-3. Run: `uv run {baseDir}/scripts/generate_image.py {baseDir}/content/<run-dir>/<block-name>-spec.json {baseDir}/content/<run-dir>/<block-name>.png`
-4. If image generation succeeds, show the user the image path
-5. If it fails (no API key, quota exceeded), fall back to the text_fallback from the spec and tell the user
 
 **Synthesis context**: For each block, provide:
 - The prerequisite outputs (extracted text, summaries, key points, title)
@@ -125,42 +130,74 @@ For each content block in the recipe:
 {prerequisite outputs go here}
 </source-data>
 
-### Step 6: Validate each content block
+For each content block:
 
-After generating each content block, validate:
+1. Read the block's `agent` field to find the agent prompt at `BASE_DIR/agents/<agent>.md`
+2. If the agent prompt file exists, follow its **Phase 1** instructions to generate a JSON spec
+3. If the agent prompt file does not exist, use the block's `rules` and `examples` to generate a spec with at minimum: the structured content fields, a `platform` field, and a `text_fallback` field
+4. Save the spec to `BASE_DIR/content/<run-dir>/<block-name>-spec.json`
+
+### Step 6: Present specs for review
+
+Show the user all generated specs in a readable format. For each block:
+- Show the block name, format, and platform
+- Show the spec fields (hook, context, key_insight, etc. for text blocks; sections, style, etc. for image blocks)
+- Show the `text_fallback` as a preview of how the final content will read
+
+Ask: "Do you want to adjust any of the specs before I render the final content?"
+
+If the user edits a spec, update the saved spec file before proceeding.
+
+### Step 7: Render final content from specs
+
+Once specs are approved, render each block to its final output.
+
+**Text blocks** (`format: text`):
+1. Follow the agent's **Phase 2** instructions to render the spec into platform-ready text
+2. Save to `BASE_DIR/content/<run-dir>/<block-name>.md`
+
+**Image blocks** (`format: image`):
+1. Run: `cd BASE_DIR && uv run scripts/generate_image.py content/<run-dir>/<block-name>-spec.json content/<run-dir>/<block-name>.png`
+2. If image generation succeeds, show the user the image path
+3. If it fails (no API key, quota exceeded), fall back to the `text_fallback` from the spec and tell the user
+
+### Step 8: Validate each content block
+
+After rendering each content block, validate:
 
 1. **Non-empty**: The block has actual content. If empty, retry once with adjusted prompting.
-2. **Format match**: Text blocks are text, image blocks have image descriptions/specs.
+2. **Format match**: Text blocks are text, image blocks have images.
 3. **No refusal**: The output doesn't contain refusal language ("I can't", "I'm unable to", "As an AI").
 4. **Platform fit**: Content respects platform limits (LinkedIn: ~3000 chars, X: 280 chars, Reddit: no hard limit but keep concise).
 
 If validation fails after one retry, output a warning: "Block '<name>' generation failed: <reason>. Showing placeholder." and continue with remaining blocks.
 
-### Step 7: Assemble and output
+### Step 9: Assemble and output
 
-Present the generated content to the user:
+Present the final rendered content to the user:
 
 For each content block:
 - Show the block name and format
-- Show the generated content
+- Show the final rendered content
 - For text blocks: show the full text, formatted for the target platform
-- For image blocks: show the image description/specification (actual image generation is a separate step)
+- For image blocks: show the image path and a note about the generated image
 
 Save the run artifact:
-- Create directory: `{baseDir}/content/<date>_<recipe-slug>/`
-- Save each block as a separate file (text blocks as `.md`, image specs as `.json`)
+- Create directory: `BASE_DIR/content/<date>_<recipe-slug>/`
+- Save each spec as `<block-name>-spec.json`
+- Save each rendered output as `<block-name>.md` (text) or `<block-name>.png` (image)
 - Save metadata: recipe used, source URLs, brand, timestamp, block statuses
 
-### Step 8: Offer next actions
+### Step 10: Offer next actions
 
 After showing the output, offer:
-- "Want me to adjust any of the blocks?"
+- "Want me to adjust any of the specs and re-render?"
 - "Remix this for another platform?" (if recipe supports multiple platforms)
 - "Run another recipe on the same source?"
 
 ## How to list recipes
 
-Read all `.yaml` files in `{baseDir}/recipes/` (skip `_schema.yaml`). For each, show:
+Read all `.yaml` files in `BASE_DIR/recipes/` (skip `_schema.yaml`). For each, show:
 - Name
 - Platforms
 - Priority
@@ -181,7 +218,7 @@ When the user asks to create a brand graph, guide them through these questions:
 5. "Do you have brand colors? (hex codes or color names)" (visual layer, optional)
 6. "Any niche keywords or topics you focus on?" (strategy layer: niche keywords)
 
-Create YAML files in `{baseDir}/brand-graphs/<brand-name>/`:
+Create YAML files in `BASE_DIR/brand-graphs/<brand-name>/`:
 - `identity.yaml`: name, positioning, description, services
 - `audience.yaml`: who, interests, pain_points, stage
 - `strategy.yaml`: goals, niche_keywords
@@ -190,7 +227,7 @@ Create YAML files in `{baseDir}/brand-graphs/<brand-name>/`:
 
 ## How to show a brand graph
 
-Read all YAML files from `{baseDir}/brand-graphs/<brand-name>/` and display a formatted summary of each layer.
+Read all YAML files from `BASE_DIR/brand-graphs/<brand-name>/` and display a formatted summary of each layer.
 
 ## Error handling
 
