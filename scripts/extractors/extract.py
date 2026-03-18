@@ -10,27 +10,39 @@ Usage:
 """
 
 import json
-import os
 import sys
-from pathlib import Path
 from urllib.parse import urlparse
-
-# Add scripts/ to path for shared modules
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from env import load_env
-from browser import create_browser
 
 
 def get_page_html(url: str, wait_for: str | None = None) -> str:
-    """Fetch a page's HTML. Uses Driver.dev cloud browser by default, local Playwright as fallback."""
-    load_env()
-    with create_browser() as page:
+    """Fetch a page's HTML using Playwright with stealth settings."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+            ],
+        )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800},
+            locale="en-US",
+        )
+        page = context.new_page()
+        # Hide webdriver property
+        page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         page.goto(url, wait_until="domcontentloaded", timeout=30000)
         if wait_for:
             page.wait_for_selector(wait_for, timeout=10000)
         else:
             page.wait_for_timeout(3000)
-        return page.content()
+        html = page.content()
+        context.close()
+        browser.close()
+    return html
 
 
 def extract_web(url: str) -> dict:
@@ -127,9 +139,12 @@ def extract_reddit(url: str) -> dict:
 
 
 def extract_twitter(url: str) -> dict:
-    """Twitter/X post extractor. Uses Driver.dev/Playwright to render the tweet."""
-    load_env()
-    with create_browser() as page:
+    """Twitter/X post extractor. Uses Playwright to render the tweet."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
         page.goto(url, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(3000)
 
@@ -149,6 +164,8 @@ def extract_twitter(url: str) -> dict:
                 author = author_el.inner_text()
         except Exception:
             pass
+
+        browser.close()
 
     text = f"Author: {author}\n\n{tweet_text}"
 

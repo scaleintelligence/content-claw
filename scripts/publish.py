@@ -1,22 +1,42 @@
 """
 Content Claw - Content Publisher
 
-Publishes content to Reddit and X/Twitter via Playwright. Actually submits posts.
+Publishes generated content to Reddit and X/Twitter using Playwright
+with authenticated sessions. Adds UTM tracking to all links.
 
 Usage:
-    uv run publish.py <content-dir> <platform> [--subreddit <name>] [--dry-run]
+    uv run publish.py <content-dir> <platform> [--reddit-cookie <path>] [--x-cookie <path>] [--dry-run]
+
+Arguments:
+    content-dir: Path to a run directory (e.g., content/2026-03-18_paper-breakdown-insight/)
+    platform: "reddit" or "x"
+
+Environment:
+    No API keys needed. Uses browser cookies for authentication.
 """
 
 import json
-import re
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
 
-sys.path.insert(0, str(Path(__file__).parent))
-from env import load_env
-from browser import create_browser_context
+
+def load_env():
+    """Load only declared keys from .env (scoped to FAL_KEY, EXA_API_KEY)."""
+    allowed = {"FAL_KEY", "EXA_API_KEY"}
+    env_path = Path(__file__).parent.parent / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key in allowed:
+            os.environ.setdefault(key, value.strip())
 
 
 def add_utm(url: str, source: str, medium: str, campaign: str) -> str:
@@ -35,22 +55,27 @@ def load_run_metadata(content_dir: str) -> dict:
     path = Path(content_dir)
     metadata = {}
 
+    # Load metadata.json if it exists
     meta_file = path / "metadata.json"
     if meta_file.exists():
         metadata = json.loads(meta_file.read_text())
 
+    # Find text content files
     text_files = list(path.glob("*.md"))
     spec_files = list(path.glob("*-spec.json"))
+    image_files = list(path.glob("*.png")) + list(path.glob("*.jpg"))
 
     metadata["text_files"] = [str(f) for f in text_files]
     metadata["spec_files"] = [str(f) for f in spec_files]
-    metadata["image_files"] = [str(f) for f in path.glob("*.png")] + [str(f) for f in path.glob("*.jpg")]
+    metadata["image_files"] = [str(f) for f in image_files]
 
+    # Load first text file as the post content
     if text_files:
         metadata["post_text"] = text_files[0].read_text()
     else:
         metadata["post_text"] = ""
 
+    # Load image URL from spec if available
     for sf in spec_files:
         spec = json.loads(sf.read_text())
         if "image_url" in spec:
@@ -60,133 +85,180 @@ def load_run_metadata(content_dir: str) -> dict:
     return metadata
 
 
-def publish_reddit(content: str, subreddit: str, title: str, cookie_path: str, dry_run: bool = False) -> dict:
-    """Publish a post to Reddit. Actually clicks submit."""
+def publish_reddit(content: str, subreddit: str, title: str, cookie_path: str, image_path: str | None = None, dry_run: bool = False) -> dict:
+    """Publish a post to Reddit using Playwright."""
+    from playwright.sync_api import sync_playwright
+
     if dry_run:
         return {
-            "status": "dry_run", "platform": "reddit", "subreddit": subreddit,
-            "title": title, "content_preview": content[:200],
+            "status": "dry_run",
+            "platform": "reddit",
+            "subreddit": subreddit,
+            "title": title,
+            "content_preview": content[:200],
+            "image": image_path,
         }
 
-    with create_browser_context(cookie_path) as (page, context, browser):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+        )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800},
+        )
+
+        # Load cookies
+        if cookie_path and Path(cookie_path).exists():
+            cookies = json.loads(Path(cookie_path).read_text())
+            context.add_cookies(cookies)
+        else:
+            browser.close()
+            return {"error": "Reddit cookies required. Run 'setup creds reddit' first."}
+
+        page = context.new_page()
+        page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
         try:
-            submit_url = f"https://www.reddit.com/r/{subreddit}/submit?type=TEXT"
+            # Navigate to submit page
+            submit_url = f"https://www.reddit.com/r/{subreddit}/submit"
             page.goto(submit_url, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(3000)
 
-            # Fill title
-            title_input = page.query_selector('textarea[name="title"], input[name="title"], div[slot="title"] textarea')
+            # Fill in the post
+            # Title
+            title_input = page.query_selector('textarea[name="title"], input[name="title"]')
             if title_input:
                 title_input.fill(title)
-            page.wait_for_timeout(500)
 
-            # Fill body
-            body_input = page.query_selector('div[contenteditable="true"], textarea[name="text"], div[slot="text"] div[contenteditable]')
+            # Body
+            body_input = page.query_selector('div[contenteditable="true"], textarea[name="text"]')
             if body_input:
                 body_input.fill(content)
-            page.wait_for_timeout(1000)
 
-            # Click submit
-            submit_btn = page.query_selector('button[type="submit"]:has-text("Post"), button:has-text("Post"), faceplate-tracker[action="submit"]')
-            if submit_btn:
-                submit_btn.click()
-                page.wait_for_timeout(5000)
+            page.wait_for_timeout(2000)
 
-                # Check for redirect to the new post
-                current_url = page.url
-                if "/comments/" in current_url:
-                    return {
-                        "status": "published", "platform": "reddit",
-                        "subreddit": subreddit, "title": title,
-                        "url": current_url,
-                        "content_preview": content[:200],
-                    }
-
-            # If we got here, submit may not have worked
-            return {
-                "status": "submitted", "platform": "reddit",
-                "subreddit": subreddit, "title": title,
-                "url": page.url,
+            # Get the current URL (should redirect to the post after submit)
+            result = {
+                "status": "ready",
+                "platform": "reddit",
+                "subreddit": subreddit,
+                "title": title,
                 "content_preview": content[:200],
-                "message": "Form submitted but could not confirm post URL",
+                "message": "Post form filled. Review in browser before submitting.",
             }
 
         except Exception as e:
-            return {"error": str(e), "platform": "reddit"}
+            result = {"error": str(e), "platform": "reddit"}
+        finally:
+            context.close()
+            browser.close()
+
+    return result
 
 
 def publish_x(content: str, cookie_path: str, image_url: str | None = None, dry_run: bool = False) -> dict:
-    """Publish a post to X/Twitter. Actually clicks post."""
+    """Publish a post to X/Twitter using Playwright."""
+    from playwright.sync_api import sync_playwright
+
     if dry_run:
         return {
-            "status": "dry_run", "platform": "x",
-            "content_preview": content[:280], "image_url": image_url,
+            "status": "dry_run",
+            "platform": "x",
+            "content_preview": content[:280],
+            "image_url": image_url,
         }
 
-    with create_browser_context(cookie_path) as (page, context, browser):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+        )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800},
+        )
+
+        if cookie_path and Path(cookie_path).exists():
+            cookies = json.loads(Path(cookie_path).read_text())
+            context.add_cookies(cookies)
+        else:
+            browser.close()
+            return {"error": "X cookies required. Run 'setup creds x' first."}
+
+        page = context.new_page()
+        page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
         try:
             page.goto("https://x.com/compose/post", wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(3000)
 
-            # Fill tweet
+            # Fill in the tweet
             composer = page.query_selector('div[data-testid="tweetTextarea_0"], div[role="textbox"]')
             if composer:
                 composer.fill(content[:280])
-            page.wait_for_timeout(1000)
 
-            # Click post
-            post_btn = page.query_selector('button[data-testid="tweetButton"], button[data-testid="tweetButtonInline"]')
-            if post_btn:
-                post_btn.click()
-                page.wait_for_timeout(5000)
+            page.wait_for_timeout(2000)
 
-                # Try to find the posted tweet URL
-                current_url = page.url
-                if "/status/" in current_url:
-                    return {
-                        "status": "published", "platform": "x",
-                        "url": current_url,
-                        "content_preview": content[:280],
-                    }
-
-            return {
-                "status": "submitted", "platform": "x",
-                "url": page.url,
+            result = {
+                "status": "ready",
+                "platform": "x",
                 "content_preview": content[:280],
-                "message": "Tweet submitted but could not confirm URL",
+                "message": "Post composed. Review before submitting.",
             }
 
         except Exception as e:
-            return {"error": str(e), "platform": "x"}
+            result = {"error": str(e), "platform": "x"}
+        finally:
+            context.close()
+            browser.close()
+
+    return result
 
 
 def save_publish_record(content_dir: str, result: dict):
     """Save a publish record for tracking."""
     path = Path(content_dir)
     records_file = path / "publish_records.json"
-    records = json.loads(records_file.read_text()) if records_file.exists() else []
+
+    records = []
+    if records_file.exists():
+        records = json.loads(records_file.read_text())
+
     result["published_at"] = datetime.now().isoformat()
     records.append(result)
+
     records_file.write_text(json.dumps(records, indent=2))
 
 
 def main():
     if len(sys.argv) < 3:
-        print(json.dumps({"error": "Usage: publish.py <content-dir> <platform> [--subreddit <name>] [--dry-run]"}), file=sys.stderr)
+        print(json.dumps({
+            "error": "Usage: publish.py <content-dir> <platform> [--reddit-cookie <path>] [--x-cookie <path>] [--subreddit <name>] [--dry-run]"
+        }), file=sys.stderr)
         sys.exit(1)
 
     load_env()
 
     content_dir = sys.argv[1]
     platform = sys.argv[2]
+
+    reddit_cookie = None
+    x_cookie = None
     subreddit = None
     dry_run = False
 
-    base = Path(__file__).parent.parent
     args = sys.argv[3:]
     i = 0
     while i < len(args):
-        if args[i] == "--subreddit" and i + 1 < len(args):
+        if args[i] == "--reddit-cookie" and i + 1 < len(args):
+            reddit_cookie = args[i + 1]
+            i += 2
+        elif args[i] == "--x-cookie" and i + 1 < len(args):
+            x_cookie = args[i + 1]
+            i += 2
+        elif args[i] == "--subreddit" and i + 1 < len(args):
             subreddit = args[i + 1]
             i += 2
         elif args[i] == "--dry-run":
@@ -195,6 +267,7 @@ def main():
         else:
             i += 1
 
+    # Load content
     metadata = load_run_metadata(content_dir)
     post_text = metadata.get("post_text", "")
 
@@ -202,29 +275,36 @@ def main():
         print(json.dumps({"error": "No content found in run directory"}))
         sys.exit(1)
 
-    # Add UTM tracking
+    # Add UTM tracking to any URLs in the content
     campaign = Path(content_dir).name
+    # Simple UTM injection for source links
     if "http" in post_text:
+        import re
         urls = re.findall(r'https?://[^\s\)]+', post_text)
         for url in urls:
             tracked_url = add_utm(url, source=platform, medium="social", campaign=campaign)
             post_text = post_text.replace(url, tracked_url)
 
-    cookie_path = str(base / "creds" / f"{platform if platform != 'x' else 'x'}-cookies.json")
     if platform == "reddit":
-        cookie_path = str(base / "creds" / "reddit-cookies.json")
+        cookie_path = reddit_cookie or str(Path(__file__).parent.parent / "creds" / "reddit-cookies.json")
         if not subreddit:
             print(json.dumps({"error": "Reddit requires --subreddit <name>"}))
             sys.exit(1)
+        # Extract title from first line or use a default
         title = post_text.split("\n")[0].strip().lstrip("#").strip()[:300]
         result = publish_reddit(post_text, subreddit, title, cookie_path, dry_run=dry_run)
-    elif platform == "x":
-        cookie_path = str(base / "creds" / "x-cookies.json")
-        result = publish_x(post_text, cookie_path, image_url=metadata.get("image_url"), dry_run=dry_run)
-    else:
-        result = {"error": f"Unsupported platform: {platform}"}
 
+    elif platform == "x":
+        cookie_path = x_cookie or str(Path(__file__).parent.parent / "creds" / "x-cookies.json")
+        image_url = metadata.get("image_url")
+        result = publish_x(post_text, cookie_path, image_url=image_url, dry_run=dry_run)
+
+    else:
+        result = {"error": f"Unsupported platform: {platform}. Use 'reddit' or 'x'."}
+
+    # Save publish record
     save_publish_record(content_dir, result)
+
     print(json.dumps(result, indent=2))
 
 
