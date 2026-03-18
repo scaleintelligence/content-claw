@@ -489,6 +489,16 @@ Every recipe run should save metadata alongside the content. After Step 9 (Assem
 
 This enables the `history` command.
 
+## Discord output limits
+
+Discord messages have a 2000 character limit. When responding:
+- Keep each message under 1800 characters
+- Show a short preview of generated content (first 500 chars), not the full text
+- Tell the user: "Full post saved to [path]. Here's a preview:"
+- Split long responses across multiple short messages
+- For specs, show only key fields (hook, title, platform), not full JSON
+- For images, always include the fal.ai `image_url` in your message. Discord auto-renders image URLs as inline previews.
+
 ## Error handling
 
 - If a source URL is unreachable, tell the user and ask for an alternative
