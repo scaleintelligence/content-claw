@@ -1,11 +1,10 @@
 """
 Content Claw - Autonomous Topic Discovery
 
-Discovers trending topics relevant to a brand using Exa search and
-Playwright-based scraping of Reddit and X/Twitter.
+Discovers trending topics relevant to a brand using Exa search.
 
 Usage:
-    uv run discover_topics.py <brand-dir> [--reddit-cookie <path>] [--x-cookie <path>]
+    uv run discover_topics.py <brand-dir>
 
 Outputs JSON array of discovered topics to stdout.
 
@@ -53,8 +52,8 @@ def load_brand_graph(brand_dir: str) -> dict:
 def plan_queries(brand_graph: dict) -> dict:
     """Generate search queries from brand graph context.
 
-    Returns a dict with keys: exa_queries, reddit_queries, x_queries.
-    Each is a list of query strings tailored to the platform.
+    Returns a dict with key: exa_queries.
+    Each is a list of query strings tailored to Exa search.
     """
     identity = brand_graph.get("identity", {})
     audience = brand_graph.get("audience", {})
@@ -77,21 +76,11 @@ def plan_queries(brand_graph: dict) -> dict:
         f"{keyword_str} {audience_str} insights analysis",
     ]
 
-    reddit_queries = [
-        f"{keyword_str} site:reddit.com",
-    ]
-
-    x_queries = [
-        keyword_str,
-    ]
-
     if pain_points:
         exa_queries.append(f"{pain_points[0]} solutions {keyword_str}")
 
     return {
         "exa_queries": exa_queries,
-        "reddit_queries": reddit_queries,
-        "x_queries": x_queries,
     }
 
 
@@ -134,140 +123,6 @@ def search_exa(queries: list[str], num_results: int = 10) -> list[dict]:
                 })
         except Exception as e:
             results.append({"error": str(e), "query": query, "source": "exa"})
-
-    return results
-
-
-def scrape_reddit(queries: list[str], cookie_path: str | None = None) -> list[dict]:
-    """Scrape Reddit for trending discussions using Playwright."""
-    from playwright.sync_api import sync_playwright
-    from readabilipy import simple_json_from_html_string
-
-    results = []
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800},
-            locale="en-US",
-        )
-
-        # Load cookies if provided
-        if cookie_path and Path(cookie_path).exists():
-            cookies = json.loads(Path(cookie_path).read_text())
-            context.add_cookies(cookies)
-
-        page = context.new_page()
-        page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-        for query in queries:
-            try:
-                search_url = f"https://www.reddit.com/search/?q={query}&sort=hot&t=week"
-                page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(3000)
-
-                # Extract post links
-                links = page.eval_on_selector_all(
-                    'a[href*="/comments/"]',
-                    "els => els.map(el => ({href: el.href, text: el.textContent})).slice(0, 10)"
-                )
-
-                seen_urls = set()
-                for link in links:
-                    url = link.get("href", "")
-                    title = link.get("text", "").strip()
-                    if not url or not title or len(title) < 10 or url in seen_urls:
-                        continue
-                    seen_urls.add(url)
-
-                    results.append({
-                        "title": title,
-                        "url": url,
-                        "source": "reddit",
-                        "query": query,
-                        "text_preview": "",
-                        "summary": "",
-                    })
-
-            except Exception as e:
-                results.append({"error": str(e), "query": query, "source": "reddit"})
-
-        context.close()
-        browser.close()
-
-    return results
-
-
-def scrape_x(queries: list[str], cookie_path: str | None = None) -> list[dict]:
-    """Scrape X/Twitter for trending discussions using Playwright."""
-    from playwright.sync_api import sync_playwright
-
-    results = []
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800},
-            locale="en-US",
-        )
-
-        # Load cookies if provided (required for X search)
-        if cookie_path and Path(cookie_path).exists():
-            cookies = json.loads(Path(cookie_path).read_text())
-            context.add_cookies(cookies)
-
-        page = context.new_page()
-        page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-        for query in queries:
-            try:
-                search_url = f"https://x.com/search?q={query}&src=typed_query&f=top"
-                page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(5000)
-
-                # Extract tweets
-                tweets = page.eval_on_selector_all(
-                    'article[data-testid="tweet"]',
-                    """els => els.slice(0, 10).map(el => {
-                        const textEl = el.querySelector('div[data-testid="tweetText"]');
-                        const linkEl = el.querySelector('a[href*="/status/"]');
-                        const authorEl = el.querySelector('div[dir="ltr"] > span');
-                        return {
-                            text: textEl ? textEl.innerText : '',
-                            url: linkEl ? linkEl.href : '',
-                            author: authorEl ? authorEl.innerText : ''
-                        };
-                    })"""
-                )
-
-                for tweet in tweets:
-                    text = tweet.get("text", "").strip()
-                    url = tweet.get("url", "")
-                    if not text or not url:
-                        continue
-
-                    results.append({
-                        "title": f"@{tweet.get('author', 'unknown')}: {text[:80]}",
-                        "url": url,
-                        "text_preview": text[:500],
-                        "source": "x",
-                        "query": query,
-                        "summary": "",
-                    })
-
-            except Exception as e:
-                results.append({"error": str(e), "query": query, "source": "x"})
-
-        context.close()
-        browser.close()
 
     return results
 
@@ -329,27 +184,12 @@ def score_topics(topics: list[dict], brand_graph: dict) -> list[dict]:
 
 def main():
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "Usage: discover_topics.py <brand-dir> [--reddit-cookie <path>] [--x-cookie <path>]"}), file=sys.stderr)
+        print(json.dumps({"error": "Usage: discover_topics.py <brand-dir>"}), file=sys.stderr)
         sys.exit(1)
 
     load_env()
 
     brand_dir = sys.argv[1]
-    reddit_cookie = None
-    x_cookie = None
-
-    # Parse optional args
-    args = sys.argv[2:]
-    i = 0
-    while i < len(args):
-        if args[i] == "--reddit-cookie" and i + 1 < len(args):
-            reddit_cookie = args[i + 1]
-            i += 2
-        elif args[i] == "--x-cookie" and i + 1 < len(args):
-            x_cookie = args[i + 1]
-            i += 2
-        else:
-            i += 1
 
     # Load brand graph
     brand_graph = load_brand_graph(brand_dir)
@@ -360,21 +200,8 @@ def main():
     # Plan queries
     queries = plan_queries(brand_graph)
 
-    # Execute searches in parallel-ish (sequential for now, each is fast)
-    all_topics = []
-
-    # Exa search (always runs)
-    exa_results = search_exa(queries["exa_queries"])
-    all_topics.extend(exa_results)
-
-    # Reddit scraping (runs if cookies provided or without auth)
-    reddit_results = scrape_reddit(queries["reddit_queries"], reddit_cookie)
-    all_topics.extend(reddit_results)
-
-    # X scraping (only runs if cookies provided, X requires auth for search)
-    if x_cookie:
-        x_results = scrape_x(queries["x_queries"], x_cookie)
-        all_topics.extend(x_results)
+    # Execute Exa search
+    all_topics = search_exa(queries["exa_queries"])
 
     # Deduplicate and score
     topics = deduplicate(all_topics)

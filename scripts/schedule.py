@@ -1,7 +1,7 @@
 """
 Content Claw - Scheduled Task Runner
 
-Runs topic discovery on a cron interval and pushes results to Discord.
+Runs topic discovery on a schedule and pushes results to Discord.
 
 Usage:
     uv run schedule.py setup <brand-dir> [--interval 1h]
@@ -24,8 +24,8 @@ BASE = Path(__file__).parent.parent
 SCHEDULE_FILE = BASE / "schedule.json"
 
 
-def setup_cron(brand_dir: str, interval: str = "1h"):
-    """Write a crontab entry for scheduled discovery."""
+def setup(brand_dir: str, interval: str = "1h"):
+    """Save schedule config and output the cron command for manual installation."""
     # Parse interval
     minutes = 60
     if interval.endswith("m"):
@@ -52,31 +52,6 @@ def setup_cron(brand_dir: str, interval: str = "1h"):
     # Create logs dir
     (BASE / "logs").mkdir(exist_ok=True)
 
-    # Default: output cron command for user to install manually.
-    # With --auto flag: write crontab directly (user must opt in).
-    auto = "--auto" in sys.argv
-
-    if auto:
-        existing = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout
-        lines = [l for l in existing.splitlines() if "content-claw" not in l and "schedule.py" not in l]
-        lines.append(f"# content-claw scheduled discovery")
-        lines.append(cmd)
-        proc = subprocess.run(["crontab", "-"], input="\n".join(lines) + "\n", capture_output=True, text=True)
-        if proc.returncode != 0:
-            return {"error": f"Failed to write crontab: {proc.stderr}"}
-
-        config["status"] = "active"
-        SCHEDULE_FILE.write_text(json.dumps(config, indent=2))
-
-        # Notify Discord
-        try:
-            from notify import send_discord
-            send_discord(f"Content Claw scheduled discovery enabled for {Path(brand_dir).name} (every {interval}). Use `stop schedule` to disable.")
-        except Exception:
-            pass
-
-        return {"status": "active", "interval": interval, "cron": cron_expr, "brand_dir": str(brand_dir), "mode": "auto"}
-
     return {
         "status": "ready",
         "interval": interval,
@@ -84,18 +59,14 @@ def setup_cron(brand_dir: str, interval: str = "1h"):
         "brand_dir": str(brand_dir),
         "cron_command": cmd,
         "manual_steps": f"Run: crontab -e\nAdd this line:\n{cmd}",
-        "mode": "manual",
-        "hint": "Pass --auto to install crontab automatically",
     }
 
 
 def run_cycle(brand_dir: str):
-    """Run one discovery + tracking cycle and notify Discord."""
+    """Run one discovery cycle and notify Discord."""
     load_env()
 
     base = Path(__file__).parent.parent
-    reddit_cookie = str(base / "creds" / "reddit-cookies.json")
-    x_cookie = str(base / "creds" / "x-cookies.json")
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M")
     brand_name = Path(brand_dir).name
@@ -104,10 +75,6 @@ def run_cycle(brand_dir: str):
     discover_cmd = [
         sys.executable, str(base / "scripts" / "discover_topics.py"), brand_dir,
     ]
-    if Path(reddit_cookie).exists():
-        discover_cmd.extend(["--reddit-cookie", reddit_cookie])
-    if Path(x_cookie).exists():
-        discover_cmd.extend(["--x-cookie", x_cookie])
 
     result = subprocess.run(discover_cmd, capture_output=True, text=True, timeout=300, cwd=str(base))
 
@@ -127,22 +94,6 @@ def run_cycle(brand_dir: str):
     if topics_output:
         topics_file.write_text(json.dumps(topics_output, indent=2))
 
-    # Run engagement tracking
-    track_cmd = [
-        sys.executable, str(base / "scripts" / "track_engagement.py"),
-        "--brand", brand_dir, "--alert-threshold", "50",
-    ]
-    track_result = subprocess.run(track_cmd, capture_output=True, text=True, timeout=300, cwd=str(base))
-
-    engagement = None
-    if track_result.returncode == 0:
-        try:
-            start = track_result.stdout.find("{")
-            if start >= 0:
-                engagement = json.loads(track_result.stdout[start:])
-        except json.JSONDecodeError:
-            pass
-
     # Format Discord notification
     lines = [f"**Content Claw Scheduled Update** ({timestamp})"]
 
@@ -152,15 +103,6 @@ def run_cycle(brand_dir: str):
         for t in topics_output.get("topics", [])[:5]:
             score = t.get("relevance_score", 0)
             lines.append(f"  {score}% | {t.get('title', '')[:60]} ({t.get('source', '')})")
-
-    if engagement:
-        alerts = engagement.get("alerts", [])
-        if alerts:
-            lines.append(f"\n**Alerts ({len(alerts)}):**")
-            for a in alerts:
-                lines.append(f"  {a['metric']}: {a['value']} on {a['platform']} ({a['url'][:50]})")
-        checked = engagement.get("posts_checked", 0)
-        lines.append(f"\n**Engagement:** {checked} posts tracked")
 
     message = "\n".join(lines)
 
@@ -176,8 +118,6 @@ def run_cycle(brand_dir: str):
         "timestamp": datetime.now().isoformat(),
         "brand": brand_name,
         "topics_found": topics_output.get("topic_count", 0) if topics_output else 0,
-        "posts_tracked": engagement.get("posts_checked", 0) if engagement else 0,
-        "alerts": len(engagement.get("alerts", [])) if engagement else 0,
     }
     print(json.dumps(log, indent=2))
     return log
@@ -191,31 +131,15 @@ def status():
 
 
 def stop():
-    """Remove the cron entry. Auto if --auto was used, manual instructions otherwise."""
-    was_auto = False
+    """Mark the schedule as stopped and show instructions to remove the cron entry."""
     if SCHEDULE_FILE.exists():
         config = json.loads(SCHEDULE_FILE.read_text())
-        was_auto = config.get("status") == "active"
         config["status"] = "stopped"
         config["stopped_at"] = datetime.now().isoformat()
         SCHEDULE_FILE.write_text(json.dumps(config, indent=2))
 
-    if was_auto:
-        existing = subprocess.run(["crontab", "-l"], capture_output=True, text=True).stdout
-        lines = [l for l in existing.splitlines() if "content-claw" not in l and "schedule.py" not in l]
-        subprocess.run(["crontab", "-"], input="\n".join(lines) + "\n", capture_output=True, text=True)
-
-        try:
-            from notify import send_discord
-            send_discord("Content Claw scheduled discovery stopped.")
-        except Exception:
-            pass
-
-        return {"status": "stopped", "mode": "auto", "crontab": "removed"}
-
     return {
         "status": "stopped",
-        "mode": "manual",
         "manual_steps": "Run: crontab -e\nRemove the line containing 'content-claw'",
     }
 
@@ -238,7 +162,7 @@ def main():
             idx = sys.argv.index("--interval")
             if idx + 1 < len(sys.argv):
                 interval = sys.argv[idx + 1]
-        result = setup_cron(brand_dir, interval)
+        result = setup(brand_dir, interval)
         print(json.dumps(result, indent=2))
 
     elif cmd == "run":

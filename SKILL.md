@@ -1,7 +1,7 @@
 ---
 name: contentclaw
 description: |
-  Turn papers, podcasts, and case studies into publish-ready social posts, infographics, and diagrams. Discovers trending topics via Exa, generates content with spec-first recipes, creates images with fal.ai, and publishes to Reddit/X with engagement tracking. Trigger on: "make a post from this", "turn this into content", "generate content", "discover topics", content recipes, brand graphs.
+  Turn papers, podcasts, and case studies into publish-ready social posts, infographics, and diagrams. Discovers trending topics via Exa, generates content with spec-first recipes, and creates images with fal.ai. Trigger on: "make a post from this", "turn this into content", "generate content", "discover topics", content recipes, brand graphs.
 version: 0.0.1
 metadata:
   openclaw:
@@ -75,10 +75,6 @@ Both keys are loaded from `.env` and never logged or transmitted beyond their re
 
 **Content synthesis**: All text generation (summaries, key points, posts) is handled by the host LLM running the skill (Claude, OpenClaw, NemoClaw). No external LLM calls are made.
 
-**Platform cookies (optional)**: If you provide Reddit or X cookies for authenticated scraping and publishing, those cookies are stored locally in `BASE_DIR/creds/` and only used by the local Playwright browser. They are never sent to Exa, fal.ai, or any other external service. Providing cookies grants the skill the ability to act as your account on those platforms for searching, posting, and reading engagement metrics. Only provide cookies if you trust the code and understand this scope.
-
-**Publishing**: The publish script uses Playwright with your cookies to fill and submit post forms on Reddit/X. Review `scripts/publish.py` before enabling publishing. A dry-run mode is available to preview without posting.
-
 If you are working with sensitive or internal content, avoid passing internal URLs as sources and run the skill in a sandboxed environment.
 
 ## Commands
@@ -91,10 +87,7 @@ Users can invoke you with these commands:
 - `create recipe` - Create a new recipe via guided questions
 - `create brand <name>` - Create a new brand graph via guided questions
 - `show brand <name>` - Show a brand graph's current state
-- `discover topics <brand-name>` - Find trending topics for a brand using Exa, Reddit, and X
-- `setup creds <platform>` - Configure Reddit or X cookies for authenticated scraping
-- `publish <run-dir> <platform> [--subreddit <name>]` - Publish generated content to Reddit or X
-- `track <brand-name>` - Check engagement metrics on published content
+- `discover topics <brand-name>` - Find trending topics for a brand using Exa search
 - `history` - Show recent content generation runs
 
 ## How to run a recipe
@@ -404,29 +397,24 @@ When the user asks to discover topics, or after creating a brand graph, run the 
 
 ### Running topic discovery
 
-1. Run: `cd BASE_DIR && uv run scripts/discover_topics.py BASE_DIR/brand-graphs/<brand-name>/ [--reddit-cookie BASE_DIR/creds/reddit-cookies.json] [--x-cookie BASE_DIR/creds/x-cookies.json]`
+1. Run: `cd BASE_DIR && uv run scripts/discover_topics.py BASE_DIR/brand-graphs/<brand-name>/`
 
-2. The script searches three sources:
-   - **Exa** (always): searches for trending news, tool launches, and insights matching the brand's niche keywords, audience interests, and positioning. Requires `EXA_API_KEY` in `.env`.
-   - **Reddit** (always, better with cookies): scrapes Reddit search for hot discussions in the brand's niche from the past week. Works without auth but returns more results with cookies.
-   - **X/Twitter** (only with cookies): scrapes X search for trending conversations. Requires authenticated cookies because X blocks unauthenticated search.
+2. The script searches Exa for trending news, tool launches, and insights matching the brand's niche keywords, audience interests, and positioning. Requires `EXA_API_KEY` in `.env`.
 
 3. Parse the JSON output. It contains:
    - `topic_count`: how many topics were found
-   - `topics`: array of topics, each with `title`, `url`, `source` (exa/reddit/x), `summary`, `text_preview`, and `relevance_score` (0-100 based on brand alignment)
+   - `topics`: array of topics, each with `title`, `url`, `source` (exa), `summary`, `text_preview`, and `relevance_score` (0-100 based on brand alignment)
 
 4. Present the top topics to the user in a table:
    - Title
-   - Source (exa/reddit/x)
+   - Source
    - Relevance score
    - URL
 
 5. Ask: "Want me to run a recipe on any of these topics? Pick a number or say 'all' to generate content for the top 5."
 
 6. If the user picks topics, suggest matching recipes based on the source type:
-   - Exa news results: `paper-breakdown-insight`, `what-you-might-have-missed`
-   - Reddit threads: `reddit-short-case-study`
-   - X posts: `paper-breakdown-insight` (insight post format works well for X source material)
+   - News results: `paper-breakdown-insight`, `what-you-might-have-missed`
    - GitHub repos: `demo-diagram-breakdown`
 
 7. Save the discovery results to `BASE_DIR/topics/<date>_<brand-name>.json`
@@ -439,37 +427,6 @@ After completing the brand graph wizard (all 6 questions answered and files save
 2. Run the topic discovery script with the new brand directory
 3. Present the results as described above
 4. This gives the user immediate value: a brand graph plus content-ready topics in one flow
-
-## How to set up platform credentials
-
-The easiest way to set up credentials is using the `/setup-browser-cookies` skill (from gstack). This imports cookies directly from the user's real browser without any manual export.
-
-### Using /setup-browser-cookies (recommended)
-
-1. Tell the user: "Let's import your browser cookies for Reddit and X. Run `/setup-browser-cookies`."
-2. The skill opens an interactive picker UI in the browser
-3. User selects their browser (Chrome, Arc, Brave, Edge)
-4. User searches for and imports cookies for `reddit.com` and `x.com`
-5. Cookies are automatically available to the `/browse` headless browser and Playwright sessions
-
-This is the recommended approach because it handles decryption, session tokens, and cookie formats automatically.
-
-### Manual cookie setup (fallback)
-
-If `/setup-browser-cookies` is not available:
-
-1. Open the platform in your browser and log in
-2. Use a cookie export extension (EditThisCookie, Cookie-Editor) to export as JSON
-3. Save to `BASE_DIR/creds/reddit-cookies.json` or `BASE_DIR/creds/x-cookies.json`
-4. Format: Playwright cookie array `[{"name": "...", "value": "...", "domain": "...", "path": "/"}]`
-
-Key cookies needed:
-- **Reddit**: `reddit_session`, `token_v2`
-- **X**: `auth_token`, `ct0`
-
-### Data privacy note for credentials
-
-Cookies are stored locally and only used by the headless browser for scraping and publishing. They are never sent to Exa, fal.ai, or any other external service. The `creds/` directory is gitignored.
 
 ## How to list recipes
 
@@ -507,38 +464,6 @@ After saving all files, automatically run topic discovery for the new brand (see
 
 Read all YAML files from `BASE_DIR/brand-graphs/<brand-name>/` and display a formatted summary of each layer.
 
-## How to publish content
-
-When the user asks to publish content to Reddit or X:
-
-### Dry run first
-
-Always do a dry run before publishing. This shows the user exactly what will be posted:
-
-1. Run: `cd BASE_DIR && uv run scripts/publish.py <content-dir> <platform> --dry-run [--subreddit <name>]`
-2. Show the user the preview (title, content, platform, subreddit)
-3. Ask: "Does this look good? Ready to publish?"
-
-### Publishing to Reddit
-
-1. Requires Reddit cookies (see "How to set up platform credentials")
-2. Ask the user which subreddit to post to
-3. Run: `cd BASE_DIR && uv run scripts/publish.py <content-dir> reddit --subreddit <name> --reddit-cookie BASE_DIR/creds/reddit-cookies.json`
-4. The publisher adds UTM tracking to all links in the content automatically (utm_source=reddit, utm_medium=social, utm_campaign=<run-name>)
-5. Show the user the result and save the publish record
-
-### Publishing to X
-
-1. Requires X cookies (see "How to set up platform credentials")
-2. Content is trimmed to 280 chars. If there's an image_url from generation, mention it.
-3. Run: `cd BASE_DIR && uv run scripts/publish.py <content-dir> x --x-cookie BASE_DIR/creds/x-cookies.json`
-4. UTM tracking is added to any links
-5. Show the user the result
-
-### After publishing
-
-A publish record is saved to `<content-dir>/publish_records.json` with the platform, timestamp, status, and URL. This is used by the engagement tracker.
-
 ## How to save run artifacts
 
 Every recipe run should save metadata alongside the content. After Step 9 (Assemble and output), save a `metadata.json` file in the run directory:
@@ -558,39 +483,11 @@ Every recipe run should save metadata alongside the content. After Step 9 (Assem
       "output_file": "<filename>",
       "spec_file": "<filename>"
     }
-  ],
-  "publish_records": []
+  ]
 }
 ```
 
-This enables the `history` command and the engagement tracker.
-
-## How to track engagement
-
-When the user asks to track engagement or check how published content is performing:
-
-1. Run: `cd BASE_DIR && uv run scripts/track_engagement.py --brand BASE_DIR/brand-graphs/<brand-name>/ --reddit-cookie BASE_DIR/creds/reddit-cookies.json --x-cookie BASE_DIR/creds/x-cookies.json`
-
-2. The tracker visits each published URL and extracts:
-   - **Reddit**: upvotes, comment count, live/removed status
-   - **X**: likes, retweets, replies, views, live/removed status
-
-3. Present results to the user in a table:
-   - Post title/preview
-   - Platform
-   - Status (live/removed)
-   - Engagement metrics
-   - Time since publish
-
-4. The tracker automatically updates the brand graph's `feedback.yaml` with engagement data. This means future content generation benefits from knowing what performed well.
-
-5. **What to learn from the metrics**: If a topic got high engagement, suggest similar topics. If content was removed, flag the subreddit's rules and adjust the recipe's tone. If X posts got more retweets than likes, the content is shareable but not resonating deeply.
-
-### Automated tracking
-
-Suggest the user run tracking periodically: "Want me to check engagement on your published content? I can do this daily or weekly."
-
-For each check, the feedback layer accumulates insights. Over time this builds a picture of what works for the brand: which topics, platforms, formats, and tones drive the most engagement.
+This enables the `history` command.
 
 ## Error handling
 
