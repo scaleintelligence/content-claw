@@ -11,6 +11,7 @@ metadata:
       env:
         - FAL_KEY
         - EXA_API_KEY
+      optional_env:
         - DRIVER_API_KEY
     install:
       uv:
