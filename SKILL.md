@@ -87,7 +87,9 @@ Match the user's request to a command below. Read the linked reference file for 
 | `show bookmarks` | List saved bookmarks | `references/utilities.md` |
 | `setup schedule <brand> [--interval 1h]` | Start hourly cron | `references/utilities.md` |
 | `stop schedule` | Stop the cron | `references/utilities.md` |
-| `setup creds <platform>` | Configure Reddit or X cookies | `references/utilities.md` |
+| `setup creds <platform>` | Import browser cookies (NOT API keys) | `references/utilities.md` |
+
+**IMPORTANT: Content Claw uses browser cookies for Reddit/X, NOT the Reddit API. Never ask the user to create a Reddit app or provide client IDs. The setup flow is: user logs into Reddit/X in their browser, exports cookies via `/setup-browser-cookies` or a browser extension, saves them to BASE_DIR/creds/. Read `references/utilities.md` for the exact steps.**
 | `history` | Show recent runs | `references/utilities.md` |
 
 ### Smart Routing
