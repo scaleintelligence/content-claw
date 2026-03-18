@@ -1,36 +1,34 @@
 """
-Shared Playwright browser management for Content Claw.
+Shared browser management for Content Claw.
 
-Provides a reusable browser context manager and a persistent browser daemon
-that scripts connect to via CDP (Chrome DevTools Protocol).
+Uses Driver.dev (Browser Cash) cloud browsers by default.
+Falls back to local Playwright if Driver.dev is unavailable.
 
-Usage as context manager (single script):
-    from scripts.browser import create_browser
+Usage:
+    from browser import create_browser, create_browser_context
+
     with create_browser(cookie_path="creds/reddit-cookies.json") as page:
         page.goto("https://reddit.com")
 
-Usage with daemon (cross-script, persistent):
-    from scripts.browser import connect_to_daemon, ensure_daemon
-    ensure_daemon()  # starts daemon if not running
-    page = connect_to_daemon(cookie_path="creds/reddit-cookies.json")
+Environment:
+    DRIVER_API_KEY - Required for cloud browsers. Set in .env file.
+    Falls back to local Playwright if not set or if cloud session fails.
 """
 
 import json
 import os
-import signal
-import socket
-import subprocess
 import sys
-import time
 from contextlib import contextmanager
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
 
-DAEMON_STATE_FILE = Path(__file__).parent.parent / ".browser-daemon.json"
 STEALTH_INIT = "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 DEFAULT_VIEWPORT = {"width": 1280, "height": 800}
-BROWSER_ARGS = ["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+LOCAL_BROWSER_ARGS = ["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+
+DRIVER_API_URL = "https://api.driver.dev/v1/browser/session"
 
 
 def load_cookies(context, cookie_path: str | None):
@@ -40,16 +38,105 @@ def load_cookies(context, cookie_path: str | None):
         context.add_cookies(cookies)
 
 
-@contextmanager
-def create_browser(cookie_path: str | None = None, headless: bool = True):
-    """Context manager that yields a Page with stealth settings and optional cookies.
+def _create_driver_session() -> dict | None:
+    """Create a cloud browser session via Driver.dev. Returns session info or None."""
+    api_key = os.getenv("DRIVER_API_KEY")
+    if not api_key:
+        return None
 
-    Browser is launched on enter and closed on exit.
-    """
+    try:
+        import httpx
+        resp = httpx.post(
+            DRIVER_API_URL,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"type": "hosted"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return {
+            "session_id": data.get("sessionId", ""),
+            "cdp_url": data.get("cdpUrl", ""),
+        }
+    except Exception:
+        return None
+
+
+def _stop_driver_session(session_id: str):
+    """Stop a Driver.dev cloud browser session."""
+    api_key = os.getenv("DRIVER_API_KEY")
+    if not api_key or not session_id:
+        return
+    try:
+        import httpx
+        httpx.delete(
+            f"{DRIVER_API_URL}?sessionId={session_id}",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+
+@contextmanager
+def _driver_browser(cookie_path: str | None = None):
+    """Connect to a Driver.dev cloud browser via CDP."""
+    from playwright.sync_api import sync_playwright
+
+    session = _create_driver_session()
+    if not session or not session["cdp_url"]:
+        raise RuntimeError("Driver.dev session creation failed")
+
+    with sync_playwright() as p:
+        browser = p.chromium.connect_over_cdp(session["cdp_url"])
+        try:
+            context = browser.contexts[0] if browser.contexts else browser.new_context(
+                user_agent=USER_AGENT,
+                viewport=DEFAULT_VIEWPORT,
+                locale="en-US",
+            )
+            load_cookies(context, cookie_path)
+            page = context.pages[0] if context.pages else context.new_page()
+            page.add_init_script(STEALTH_INIT)
+            yield page
+        finally:
+            browser.close()
+            _stop_driver_session(session["session_id"])
+
+
+@contextmanager
+def _driver_browser_context(cookie_path: str | None = None):
+    """Connect to Driver.dev and yield (page, context, browser)."""
+    from playwright.sync_api import sync_playwright
+
+    session = _create_driver_session()
+    if not session or not session["cdp_url"]:
+        raise RuntimeError("Driver.dev session creation failed")
+
+    with sync_playwright() as p:
+        browser = p.chromium.connect_over_cdp(session["cdp_url"])
+        try:
+            context = browser.contexts[0] if browser.contexts else browser.new_context(
+                user_agent=USER_AGENT,
+                viewport=DEFAULT_VIEWPORT,
+                locale="en-US",
+            )
+            load_cookies(context, cookie_path)
+            page = context.pages[0] if context.pages else context.new_page()
+            page.add_init_script(STEALTH_INIT)
+            yield page, context, browser
+        finally:
+            browser.close()
+            _stop_driver_session(session["session_id"])
+
+
+@contextmanager
+def _local_browser(cookie_path: str | None = None):
+    """Launch a local Playwright browser."""
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless, args=BROWSER_ARGS)
+        browser = p.chromium.launch(headless=True, args=LOCAL_BROWSER_ARGS)
         context = browser.new_context(
             user_agent=USER_AGENT,
             viewport=DEFAULT_VIEWPORT,
@@ -66,12 +153,12 @@ def create_browser(cookie_path: str | None = None, headless: bool = True):
 
 
 @contextmanager
-def create_browser_context(cookie_path: str | None = None, headless: bool = True):
-    """Context manager that yields (page, context, browser) for multi-page operations."""
+def _local_browser_context(cookie_path: str | None = None):
+    """Launch a local Playwright browser and yield (page, context, browser)."""
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless, args=BROWSER_ARGS)
+        browser = p.chromium.launch(headless=True, args=LOCAL_BROWSER_ARGS)
         context = browser.new_context(
             user_agent=USER_AGENT,
             viewport=DEFAULT_VIEWPORT,
@@ -87,113 +174,40 @@ def create_browser_context(cookie_path: str | None = None, headless: bool = True
             browser.close()
 
 
-def _find_free_port() -> int:
-    """Find a free port for the browser daemon."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
+@contextmanager
+def create_browser(cookie_path: str | None = None):
+    """Create a browser page. Tries Driver.dev first, falls back to local Playwright.
 
-
-def ensure_daemon() -> dict:
-    """Start the browser daemon if not running. Returns connection info."""
-    if DAEMON_STATE_FILE.exists():
-        state = json.loads(DAEMON_STATE_FILE.read_text())
-        # Check if process is alive
-        try:
-            os.kill(state["pid"], 0)
-            # Check if CDP endpoint responds
-            import httpx
-            resp = httpx.get(f"http://localhost:{state['port']}/json/version", timeout=2)
-            if resp.status_code == 200:
-                return state
-        except (OSError, Exception):
-            pass
-        # Stale state file, clean up
-        DAEMON_STATE_FILE.unlink(missing_ok=True)
-
-    # Launch new daemon
-    port = _find_free_port()
-    proc = subprocess.Popen(
-        [
-            sys.executable, "-c",
-            f"""
-import json, signal, sys, time
-from pathlib import Path
-from playwright.sync_api import sync_playwright
-
-p = sync_playwright().start()
-browser = p.chromium.launch(
-    headless=True,
-    args={BROWSER_ARGS!r} + ["--remote-debugging-port={port}"],
-)
-
-state = {{"pid": __import__("os").getpid(), "port": {port}, "ws_endpoint": browser.contexts[0].pages[0].url if browser.contexts else ""}}
-Path("{DAEMON_STATE_FILE}").write_text(json.dumps(state))
-
-def shutdown(sig, frame):
-    browser.close()
-    p.stop()
-    Path("{DAEMON_STATE_FILE}").unlink(missing_ok=True)
-    sys.exit(0)
-
-signal.signal(signal.SIGTERM, shutdown)
-signal.signal(signal.SIGINT, shutdown)
-
-# Keep alive, auto-shutdown after 30 min idle
-while True:
-    time.sleep(1800)
-    browser.close()
-    p.stop()
-    Path("{DAEMON_STATE_FILE}").unlink(missing_ok=True)
-    sys.exit(0)
-"""
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    # Wait for daemon to be ready
-    for _ in range(30):
-        if DAEMON_STATE_FILE.exists():
-            state = json.loads(DAEMON_STATE_FILE.read_text())
-            return state
-        time.sleep(0.5)
-
-    raise RuntimeError("Browser daemon failed to start within 15 seconds")
-
-
-def stop_daemon():
-    """Stop the browser daemon if running."""
-    if not DAEMON_STATE_FILE.exists():
-        return
-    state = json.loads(DAEMON_STATE_FILE.read_text())
-    try:
-        os.kill(state["pid"], signal.SIGTERM)
-    except OSError:
-        pass
-    DAEMON_STATE_FILE.unlink(missing_ok=True)
-
-
-def connect_to_daemon(cookie_path: str | None = None):
-    """Connect to the running browser daemon and return a new page.
-
-    Falls back to create_browser if daemon is not available.
+    Usage:
+        with create_browser(cookie_path="creds/reddit-cookies.json") as page:
+            page.goto("https://reddit.com")
     """
     try:
-        state = ensure_daemon()
-        from playwright.sync_api import sync_playwright
-        p = sync_playwright().start()
-        browser = p.chromium.connect_over_cdp(f"http://localhost:{state['port']}")
-        context = browser.new_context(
-            user_agent=USER_AGENT,
-            viewport=DEFAULT_VIEWPORT,
-            locale="en-US",
-        )
-        load_cookies(context, cookie_path)
-        page = context.new_page()
-        page.add_init_script(STEALTH_INIT)
-        return page
+        with _driver_browser(cookie_path) as page:
+            yield page
+            return
     except Exception:
-        # Fallback to direct browser launch
-        return None
+        pass
+
+    with _local_browser(cookie_path) as page:
+        yield page
+
+
+@contextmanager
+def create_browser_context(cookie_path: str | None = None):
+    """Create a browser and yield (page, context, browser).
+    Tries Driver.dev first, falls back to local Playwright.
+
+    Usage:
+        with create_browser_context(cookie_path) as (page, context, browser):
+            page.goto("https://reddit.com")
+    """
+    try:
+        with _driver_browser_context(cookie_path) as result:
+            yield result
+            return
+    except Exception:
+        pass
+
+    with _local_browser_context(cookie_path) as result:
+        yield result

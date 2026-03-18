@@ -11,6 +11,7 @@ metadata:
       env:
         - FAL_KEY
         - EXA_API_KEY
+        - DRIVER_API_KEY
     install:
       uv:
         - playwright
@@ -68,10 +69,11 @@ This skill sends data to external services and uses browser automation during ex
 **API keys required:**
 - `FAL_KEY`: sent to fal.ai for image generation. Only condensed image specs (titles, section headings, style params) are transmitted. No full source text.
 - `EXA_API_KEY`: sent to exa.ai for topic discovery searches. Only search queries derived from brand keywords are transmitted. No source content.
+- `DRIVER_API_KEY` (optional but recommended): sent to Driver.dev (Browser Cash) for cloud browser sessions. URLs you visit are processed through their hosted browsers. Falls back to local Playwright if not set.
 
-Both keys are loaded from `.env` and never logged or transmitted beyond their respective APIs. Use scoped, usage-limited keys when possible.
+All keys are loaded from `.env` and never logged or transmitted beyond their respective APIs. Use scoped, usage-limited keys when possible.
 
-**Source extraction**: Playwright renders pages in a headless browser locally. No source content is sent externally during extraction. The extractor uses stealth settings (hides webdriver property, custom user-agent) to avoid bot detection. This is standard for headless scraping but may contravene some sites' terms of service.
+**Source extraction and browsing**: By default, pages are rendered in a Driver.dev cloud browser (real browser on real infrastructure, better stealth than local headless Playwright). If Driver.dev is unavailable or `DRIVER_API_KEY` is not set, falls back to local Playwright with stealth settings. URLs you scrape are sent to Driver.dev's servers for rendering. The extractor uses stealth settings (hides webdriver property, custom user-agent) to avoid bot detection. This is standard for headless scraping but may contravene some sites' terms of service.
 
 **Content synthesis**: All text generation (summaries, key points, posts) is handled by the host LLM running the skill (Claude, OpenClaw, NemoClaw). No external LLM calls are made.
 

@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-ALLOWED_KEYS = {"FAL_KEY", "EXA_API_KEY"}
+ALLOWED_KEYS = {"FAL_KEY", "EXA_API_KEY", "DRIVER_API_KEY"}
 
 
 def load_env(extra_keys: set[str] | None = None):
