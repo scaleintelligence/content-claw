@@ -1,6 +1,6 @@
 [project]
 name = "content-claw"
-version = "0.1.0"
+version = "0.0.1"
 description = "Content generation engine for OpenClaw"
 requires-python = ">=3.11"
 dependencies = [
@@ -9,6 +9,12 @@ dependencies = [
     "readabilipy>=0.2",
     "playwright>=1.49",
     "openai>=1.50",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
