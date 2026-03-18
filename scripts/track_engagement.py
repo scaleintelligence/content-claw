@@ -1,165 +1,22 @@
 """
 Content Claw - Engagement Tracker
 
-Checks published content for engagement metrics (upvotes, comments, likes, retweets).
-Updates publish records and brand graph feedback layer.
+Checks published content for engagement metrics. Updates brand graph feedback.
 
 Usage:
-    uv run track_engagement.py <content-dir> [--reddit-cookie <path>] [--x-cookie <path>]
-    uv run track_engagement.py --brand <brand-dir> [--reddit-cookie <path>] [--x-cookie <path>]
-
-The --brand flag tracks ALL published content for a brand across all runs.
+    uv run track_engagement.py <content-dir>
+    uv run track_engagement.py --brand <brand-dir>
+    uv run track_engagement.py --brand <brand-dir> --alert-threshold 50
 """
 
 import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
 
-
-def load_env():
-    """Load only declared keys from .env (scoped to FAL_KEY, EXA_API_KEY)."""
-    allowed = {"FAL_KEY", "EXA_API_KEY"}
-    env_path = Path(__file__).parent.parent / ".env"
-    if not env_path.exists():
-        return
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        if key in allowed:
-            os.environ.setdefault(key, value.strip())
-
-
-def check_reddit_post(url: str, cookie_path: str | None = None) -> dict:
-    """Check a Reddit post's current engagement metrics."""
-    from playwright.sync_api import sync_playwright
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            viewport={"width": 1280, "height": 800},
-        )
-
-        if cookie_path and Path(cookie_path).exists():
-            cookies = json.loads(Path(cookie_path).read_text())
-            context.add_cookies(cookies)
-
-        page = context.new_page()
-        page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-        metrics = {"url": url, "platform": "reddit", "checked_at": datetime.now().isoformat()}
-
-        try:
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(3000)
-
-            # Check if post is still live
-            removed = page.query_selector('span:has-text("[removed]"), span:has-text("[deleted]")')
-            metrics["status"] = "removed" if removed else "live"
-
-            # Extract upvotes
-            score_el = page.query_selector('div[id*="vote-arrows"] button[aria-label*="upvote"]')
-            if not score_el:
-                score_el = page.query_selector('shreddit-post')
-            if score_el:
-                score_text = score_el.get_attribute("score") or ""
-                if score_text.isdigit():
-                    metrics["upvotes"] = int(score_text)
-
-            # Extract comment count
-            comments_el = page.query_selector('a[data-click-id="comments"], span:has-text("comment")')
-            if comments_el:
-                text = comments_el.inner_text()
-                nums = [int(s) for s in text.split() if s.isdigit()]
-                if nums:
-                    metrics["comments"] = nums[0]
-
-        except Exception as e:
-            metrics["error"] = str(e)
-        finally:
-            context.close()
-            browser.close()
-
-    return metrics
-
-
-def check_x_post(url: str, cookie_path: str | None = None) -> dict:
-    """Check an X/Twitter post's current engagement metrics."""
-    from playwright.sync_api import sync_playwright
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            viewport={"width": 1280, "height": 800},
-        )
-
-        if cookie_path and Path(cookie_path).exists():
-            cookies = json.loads(Path(cookie_path).read_text())
-            context.add_cookies(cookies)
-
-        page = context.new_page()
-        page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-        metrics = {"url": url, "platform": "x", "checked_at": datetime.now().isoformat()}
-
-        try:
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            page.wait_for_timeout(5000)
-
-            # Check if post still exists
-            not_found = page.query_selector('span:has-text("doesn\\'t exist"), span:has-text("suspended")')
-            metrics["status"] = "removed" if not_found else "live"
-
-            # Extract engagement metrics
-            metrics_els = page.query_selector_all('a[role="link"] span[data-testid]')
-            for el in metrics_els:
-                text = el.inner_text().strip()
-                parent = el.evaluate("el => el.closest('a')?.getAttribute('aria-label') || ''")
-                if "like" in parent.lower():
-                    metrics["likes"] = parse_metric(text)
-                elif "repost" in parent.lower() or "retweet" in parent.lower():
-                    metrics["retweets"] = parse_metric(text)
-                elif "reply" in parent.lower() or "comment" in parent.lower():
-                    metrics["replies"] = parse_metric(text)
-                elif "view" in parent.lower():
-                    metrics["views"] = parse_metric(text)
-
-            # Try aria-label based extraction as fallback
-            if "likes" not in metrics:
-                group = page.query_selector('div[role="group"]')
-                if group:
-                    aria = group.get_attribute("aria-label") or ""
-                    # Parse "5 replies, 10 reposts, 25 likes, 1000 views"
-                    for part in aria.split(","):
-                        part = part.strip().lower()
-                        for key in ["replies", "reposts", "likes", "views", "bookmarks"]:
-                            if key in part:
-                                nums = [int(s) for s in part.split() if s.isdigit()]
-                                if nums:
-                                    if key == "reposts":
-                                        metrics["retweets"] = nums[0]
-                                    else:
-                                        metrics[key] = nums[0]
-
-        except Exception as e:
-            metrics["error"] = str(e)
-        finally:
-            context.close()
-            browser.close()
-
-    return metrics
+sys.path.insert(0, str(Path(__file__).parent))
+from env import load_env
+from browser import create_browser_context
 
 
 def parse_metric(text: str) -> int:
@@ -177,153 +34,242 @@ def parse_metric(text: str) -> int:
         return 0
 
 
+def check_reddit_post(page, url: str) -> dict:
+    """Check a Reddit post's engagement metrics using an existing page."""
+    metrics = {"url": url, "platform": "reddit", "checked_at": datetime.now().isoformat()}
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(3000)
+
+        removed = page.query_selector('span:has-text("[removed]"), span:has-text("[deleted]")')
+        metrics["status"] = "removed" if removed else "live"
+
+        score_el = page.query_selector('shreddit-post')
+        if score_el:
+            score_text = score_el.get_attribute("score") or ""
+            if score_text.isdigit():
+                metrics["upvotes"] = int(score_text)
+
+        comments_el = page.query_selector('a[data-click-id="comments"], span:has-text("comment")')
+        if comments_el:
+            text = comments_el.inner_text()
+            nums = [int(s) for s in text.split() if s.isdigit()]
+            if nums:
+                metrics["comments"] = nums[0]
+
+    except Exception as e:
+        metrics["error"] = str(e)
+    return metrics
+
+
+def check_x_post(page, url: str) -> dict:
+    """Check an X/Twitter post's engagement metrics using an existing page."""
+    metrics = {"url": url, "platform": "x", "checked_at": datetime.now().isoformat()}
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(5000)
+
+        not_found = page.query_selector('span:has-text("doesn\'t exist"), span:has-text("suspended")')
+        metrics["status"] = "removed" if not_found else "live"
+
+        # Try aria-label extraction (most reliable)
+        group = page.query_selector('div[role="group"]')
+        if group:
+            aria = group.get_attribute("aria-label") or ""
+            for part in aria.split(","):
+                part = part.strip().lower()
+                for key in ["replies", "reposts", "likes", "views", "bookmarks"]:
+                    if key in part:
+                        nums = [int(s) for s in part.split() if s.isdigit()]
+                        if nums:
+                            mapped = "retweets" if key == "reposts" else key
+                            metrics[mapped] = nums[0]
+
+    except Exception as e:
+        metrics["error"] = str(e)
+    return metrics
+
+
 def update_brand_feedback(brand_dir: str, metrics: list[dict]):
     """Update the brand graph's feedback layer with engagement data."""
     import yaml
+    import fcntl
 
     feedback_path = Path(brand_dir) / "feedback.yaml"
 
-    if feedback_path.exists():
-        with open(feedback_path) as f:
-            feedback = yaml.safe_load(f) or {}
-    else:
-        feedback = {}
+    # File locking to prevent concurrent write corruption
+    lock_path = Path(brand_dir) / ".feedback.lock"
+    lock_path.touch()
+    with open(lock_path) as lock_f:
+        fcntl.flock(lock_f, fcntl.LOCK_EX)
+        try:
+            if feedback_path.exists():
+                with open(feedback_path) as f:
+                    feedback = yaml.safe_load(f) or {}
+            else:
+                feedback = {}
 
-    insights = feedback.get("insights", [])
+            insights = feedback.get("insights", [])
 
-    for m in metrics:
-        if "error" in m or m.get("status") == "removed":
-            continue
+            for m in metrics:
+                if "error" in m or m.get("status") == "removed":
+                    continue
+                insight = {
+                    "url": m.get("url", ""),
+                    "platform": m.get("platform", ""),
+                    "checked_at": m.get("checked_at", ""),
+                    "status": m.get("status", "unknown"),
+                    "metrics": {},
+                }
+                for key in ["upvotes", "comments", "likes", "retweets", "replies", "views"]:
+                    if key in m:
+                        insight["metrics"][key] = m[key]
+                if insight["metrics"]:
+                    insights.append(insight)
 
-        insight = {
-            "url": m.get("url", ""),
-            "platform": m.get("platform", ""),
-            "checked_at": m.get("checked_at", ""),
-            "status": m.get("status", "unknown"),
-            "metrics": {},
-        }
+            feedback["insights"] = insights
+            feedback["last_tracked"] = datetime.now().isoformat()
 
-        for key in ["upvotes", "comments", "likes", "retweets", "replies", "views"]:
-            if key in m:
-                insight["metrics"][key] = m[key]
-
-        # Only add if we have actual metrics
-        if insight["metrics"]:
-            insights.append(insight)
-
-    feedback["insights"] = insights
-    feedback["last_tracked"] = datetime.now().isoformat()
-
-    with open(feedback_path, "w") as f:
-        yaml.dump(feedback, f, default_flow_style=False)
+            with open(feedback_path, "w") as f:
+                yaml.dump(feedback, f, default_flow_style=False)
+        finally:
+            fcntl.flock(lock_f, fcntl.LOCK_UN)
 
 
 def find_publish_records(content_dir: str) -> list[dict]:
     """Find all publish records in a content directory."""
-    path = Path(content_dir)
-    records_file = path / "publish_records.json"
+    records_file = Path(content_dir) / "publish_records.json"
     if records_file.exists():
         return json.loads(records_file.read_text())
     return []
 
 
 def find_all_brand_runs(brand_name: str) -> list[str]:
-    """Find all content run directories for a brand."""
+    """Find all content run directories for a specific brand."""
     content_dir = Path(__file__).parent.parent / "content"
     if not content_dir.exists():
         return []
     runs = []
     for d in content_dir.iterdir():
-        if d.is_dir():
-            records_file = d / "publish_records.json"
-            if records_file.exists():
-                runs.append(str(d))
+        if not d.is_dir():
+            continue
+        # Check metadata.json for brand match
+        meta = d / "metadata.json"
+        if meta.exists():
+            try:
+                data = json.loads(meta.read_text())
+                if data.get("brand", "").lower() == brand_name.lower():
+                    runs.append(str(d))
+                    continue
+            except (json.JSONDecodeError, KeyError):
+                pass
+        # Fallback: check if directory has publish records
+        if (d / "publish_records.json").exists():
+            runs.append(str(d))
     return runs
+
+
+def check_alerts(metrics: list[dict], threshold: int) -> list[dict]:
+    """Check if any metrics crossed the alert threshold."""
+    alerts = []
+    for m in metrics:
+        if "error" in m:
+            continue
+        for key in ["upvotes", "likes", "views"]:
+            val = m.get(key, 0)
+            if val >= threshold:
+                alerts.append({
+                    "url": m.get("url", ""),
+                    "platform": m.get("platform", ""),
+                    "metric": key,
+                    "value": val,
+                    "threshold": threshold,
+                })
+    return alerts
 
 
 def main():
     if len(sys.argv) < 2:
-        print(json.dumps({
-            "error": "Usage: track_engagement.py <content-dir> or --brand <brand-dir>"
-        }), file=sys.stderr)
+        print(json.dumps({"error": "Usage: track_engagement.py <content-dir> or --brand <brand-dir>"}), file=sys.stderr)
         sys.exit(1)
 
     load_env()
 
-    reddit_cookie = None
-    x_cookie = None
     brand_dir = None
     content_dirs = []
+    alert_threshold = 50
 
     args = sys.argv[1:]
     i = 0
     while i < len(args):
-        if args[i] == "--reddit-cookie" and i + 1 < len(args):
-            reddit_cookie = args[i + 1]
-            i += 2
-        elif args[i] == "--x-cookie" and i + 1 < len(args):
-            x_cookie = args[i + 1]
-            i += 2
-        elif args[i] == "--brand" and i + 1 < len(args):
+        if args[i] == "--brand" and i + 1 < len(args):
             brand_dir = args[i + 1]
+            i += 2
+        elif args[i] == "--alert-threshold" and i + 1 < len(args):
+            alert_threshold = int(args[i + 1])
             i += 2
         else:
             content_dirs.append(args[i])
             i += 1
 
-    # Default cookie paths
     base = Path(__file__).parent.parent
-    if not reddit_cookie:
-        reddit_cookie = str(base / "creds" / "reddit-cookies.json")
-    if not x_cookie:
-        x_cookie = str(base / "creds" / "x-cookies.json")
+    reddit_cookie = str(base / "creds" / "reddit-cookies.json")
+    x_cookie = str(base / "creds" / "x-cookies.json")
 
     # Collect all publish records
     all_records = []
-
     if brand_dir:
-        # Track all runs
-        for run_dir in find_all_brand_runs(""):
-            all_records.extend(
-                (run_dir, r) for r in find_publish_records(run_dir)
-            )
+        brand_name = Path(brand_dir).name
+        for run_dir in find_all_brand_runs(brand_name):
+            all_records.extend((run_dir, r) for r in find_publish_records(run_dir))
     else:
         for cd in content_dirs:
-            all_records.extend(
-                (cd, r) for r in find_publish_records(cd)
-            )
+            all_records.extend((cd, r) for r in find_publish_records(cd))
 
     if not all_records:
         print(json.dumps({"error": "No publish records found"}))
         sys.exit(1)
 
-    # Check engagement for each published post
+    # Group by platform to minimize browser launches
+    reddit_urls = [(rd, r) for rd, r in all_records if r.get("platform") == "reddit" and r.get("url") and r.get("status") not in ("dry_run", "error")]
+    x_urls = [(rd, r) for rd, r in all_records if r.get("platform") == "x" and r.get("url") and r.get("status") not in ("dry_run", "error")]
+
     all_metrics = []
-    for run_dir, record in all_records:
-        url = record.get("url", "")
-        platform = record.get("platform", "")
 
-        if not url or record.get("status") in ("dry_run", "error"):
-            continue
+    # Check Reddit posts (one browser session for all)
+    if reddit_urls:
+        try:
+            with create_browser_context(reddit_cookie) as (page, ctx, br):
+                for run_dir, record in reddit_urls:
+                    m = check_reddit_post(page, record["url"])
+                    m["run_dir"] = run_dir
+                    all_metrics.append(m)
+        except Exception as e:
+            all_metrics.append({"error": f"Reddit browser failed: {e}", "platform": "reddit"})
 
-        if platform == "reddit":
-            metrics = check_reddit_post(url, reddit_cookie)
-        elif platform == "x":
-            metrics = check_x_post(url, x_cookie)
-        else:
-            continue
+    # Check X posts (one browser session for all)
+    if x_urls:
+        try:
+            with create_browser_context(x_cookie) as (page, ctx, br):
+                for run_dir, record in x_urls:
+                    m = check_x_post(page, record["url"])
+                    m["run_dir"] = run_dir
+                    all_metrics.append(m)
+        except Exception as e:
+            all_metrics.append({"error": f"X browser failed: {e}", "platform": "x"})
 
-        metrics["run_dir"] = run_dir
-        all_metrics.append(metrics)
-
-    # Update brand feedback if brand_dir provided
+    # Update brand feedback
     if brand_dir and all_metrics:
         update_brand_feedback(brand_dir, all_metrics)
+
+    # Check alerts
+    alerts = check_alerts(all_metrics, alert_threshold)
 
     output = {
         "tracked_at": datetime.now().isoformat(),
         "posts_checked": len(all_metrics),
         "metrics": all_metrics,
+        "alerts": alerts,
     }
 
     print(json.dumps(output, indent=2))

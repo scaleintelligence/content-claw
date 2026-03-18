@@ -17,6 +17,8 @@ import os
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+
 
 def spec_to_prompt(spec: dict) -> str:
     """Convert an image spec JSON (from agent prompts) into an image generation prompt."""
@@ -246,18 +248,8 @@ def main():
         )
         sys.exit(1)
 
-    # Load only FAL_KEY from .env (scoped loader)
-    allowed = {"FAL_KEY"}
-    env_path = Path(__file__).parent.parent / ".env"
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            if key in allowed:
-                os.environ.setdefault(key, value.strip())
+    from env import load_env
+    load_env()
 
     if sys.argv[1] == "--prompt":
         prompt = sys.argv[2]

@@ -89,12 +89,22 @@ Users can invoke you with these commands:
 - `list recipes` - List all available recipes
 - `show recipe <slug>` - Show details of a specific recipe
 - `create recipe` - Create a new recipe via guided questions
-- `create brand <name>` - Create a new brand graph via guided questions
+- `create brand <name>` - Create a new brand graph (with auto topic discovery)
+- `create brand from template <template>` - Start from a pre-built template (saas-b2b, dev-tools, ai-ml)
 - `show brand <name>` - Show a brand graph's current state
-- `discover topics <brand-name>` - Find trending topics for a brand using Exa, Reddit, and X
-- `setup creds <platform>` - Configure Reddit or X cookies for authenticated scraping
-- `publish <run-dir> <platform> [--subreddit <name>]` - Publish generated content to Reddit or X
-- `track <brand-name>` - Check engagement metrics on published content
+- `discover topics <brand-name>` - Find trending topics using Exa, Reddit, and X
+- `show queue [--brand <name>]` - List all generated content by publish status
+- `remix <run-dir> <platform>` - Re-render existing content for a different platform
+- `bookmark <url> [--note "text"]` - Save a URL for later content generation
+- `show bookmarks` - List saved bookmarks
+- `show digest <brand-name> [--period hourly|daily|weekly]` - Performance summary
+- `show stats <brand-name>` - Recipe performance leaderboard
+- `show diff <brand-name>` - What the feedback loop learned recently
+- `publish <run-dir> <platform> [--subreddit <name>]` - Publish to Reddit or X
+- `track <brand-name>` - Check engagement on published content
+- `setup schedule <brand-name> [--interval 1h]` - Start scheduled discovery + tracking
+- `stop schedule` - Stop the scheduled cron
+- `setup creds <platform>` - Configure Reddit or X cookies
 - `history` - Show recent content generation runs
 
 ## How to run a recipe
@@ -591,6 +601,90 @@ When the user asks to track engagement or check how published content is perform
 Suggest the user run tracking periodically: "Want me to check engagement on your published content? I can do this daily or weekly."
 
 For each check, the feedback layer accumulates insights. Over time this builds a picture of what works for the brand: which topics, platforms, formats, and tones drive the most engagement.
+
+## How to show the content queue
+
+Run: `cd BASE_DIR && uv run scripts/queue.py [--brand <name>] [--status unpublished]`
+
+Show results as a table: run name, recipe, status (unpublished/published/partial), platforms, preview text. Offer to publish or remix unpublished items.
+
+## How to remix content
+
+When the user says "remix for x" or "remix <run-dir> reddit":
+
+1. Find the spec JSON in the run directory
+2. Load the spec, change the `platform` field to the target platform
+3. Follow the agent's Phase 2 instructions to re-render for the new platform
+4. Save the re-rendered content alongside the original (e.g., `insight-post-x.md`)
+5. Do NOT re-run extraction or prerequisites. Reuse existing spec data.
+
+## How to bookmark sources
+
+- `bookmark <url>`: Run `cd BASE_DIR && uv run scripts/bookmark.py add <url>`
+- `show bookmarks`: Run `cd BASE_DIR && uv run scripts/bookmark.py list`
+- Remove: Run `cd BASE_DIR && uv run scripts/bookmark.py remove <url>`
+- When running a recipe on a bookmarked URL, mark it as used
+
+## How to show digest and stats
+
+**Digest**: Run `cd BASE_DIR && uv run scripts/digest.py BASE_DIR/brand-graphs/<brand-name>/ --period <hourly|daily|weekly> [--notify]`
+
+Present the summary: posts tracked, total engagement, top/worst performer, platform breakdown. The `--notify` flag also sends to Discord.
+
+**Stats (leaderboard)**: The digest output includes a `leaderboard` field ranking recipes by average engagement per platform. Show the top 10.
+
+## How to show brand graph diff
+
+When the user asks what the feedback loop learned:
+
+1. Read `BASE_DIR/brand-graphs/<brand-name>/feedback.yaml`
+2. Compare the latest insights to previous ones (by `checked_at` timestamp)
+3. Summarize what changed: which posts gained engagement, which were removed, any patterns (e.g., "Reddit case studies outperform LinkedIn insight posts 3:1")
+4. Suggest recipe/platform adjustments based on the data
+
+## How to use brand graph templates
+
+When the user says "create brand from template <template>":
+
+1. List available templates from `BASE_DIR/brand-graphs/templates/`: saas-b2b, dev-tools, ai-ml
+2. Copy the template directory to `BASE_DIR/brand-graphs/<brand-name>/`
+3. Walk through each YAML file, showing the placeholder values and asking the user to customize
+4. After customization, automatically run topic discovery
+
+## How to set up scheduled discovery
+
+When the user says "setup schedule":
+
+1. Run: `cd BASE_DIR && uv run scripts/schedule.py setup BASE_DIR/brand-graphs/<brand-name>/ --interval <interval>`
+2. This writes a crontab entry that runs discovery + engagement tracking on the interval
+3. Each cycle: discovers topics, tracks engagement on published posts, checks alert thresholds, sends a summary to Discord #nemoclaw
+4. Default interval: 1 hour
+
+To check status: `cd BASE_DIR && uv run scripts/schedule.py status`
+To stop: `cd BASE_DIR && uv run scripts/schedule.py stop`
+
+## How to do A/B spec testing
+
+When the user asks to test two variants:
+
+1. Generate variant A spec normally (Phase 1 of the agent)
+2. Generate variant B spec with a different angle, hook, or format. Add to the spec:
+   - `"variant_group": "<UUID>"` (same UUID for both variants)
+   - `"variant_label": "A"` or `"B"`
+3. Save both specs in the same run directory
+4. Publish both (to different platforms, subreddits, or times)
+5. Track engagement on both
+6. In the digest, variants with the same `variant_group` are compared side by side
+
+## How to use smart recipe suggestion
+
+When the user provides a URL without specifying a recipe:
+
+1. Detect the source type using the extractor's `detect_type()` function
+2. Match against recipe `source_types` fields
+3. If the brand has engagement data in `feedback.yaml`, weight suggestions by historical performance: recipes that performed well for this source type on the user's preferred platforms rank higher
+4. Present top 3 suggestions with reasoning: "This is a research paper. Your paper-breakdown-insight recipe averages 34 reactions on LinkedIn. Run it?"
+5. Let the user pick or specify a different recipe
 
 ## Error handling
 
