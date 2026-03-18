@@ -10,6 +10,7 @@ metadata:
         - uv
       env:
         - FAL_KEY
+        - EXA_API_KEY
     install:
       uv:
         - playwright
@@ -80,6 +81,8 @@ Users can invoke you with these commands:
 - `create recipe` - Create a new recipe via guided questions
 - `create brand <name>` - Create a new brand graph via guided questions
 - `show brand <name>` - Show a brand graph's current state
+- `discover topics <brand-name>` - Find trending topics for a brand using Exa, Reddit, and X
+- `setup creds <platform>` - Configure Reddit or X cookies for authenticated scraping
 - `history` - Show recent content generation runs
 
 ## How to run a recipe
@@ -383,6 +386,91 @@ When the user needs a new agent prompt for a block:
 
 3. Show the user the generated agent prompt and ask for approval before saving.
 
+## How to discover topics
+
+When the user asks to discover topics, or after creating a brand graph, run the autonomous topic discovery pipeline.
+
+### Running topic discovery
+
+1. Run: `cd BASE_DIR && uv run scripts/discover_topics.py BASE_DIR/brand-graphs/<brand-name>/ [--reddit-cookie BASE_DIR/creds/reddit-cookies.json] [--x-cookie BASE_DIR/creds/x-cookies.json]`
+
+2. The script searches three sources:
+   - **Exa** (always): searches for trending news, tool launches, and insights matching the brand's niche keywords, audience interests, and positioning. Requires `EXA_API_KEY` in `.env`.
+   - **Reddit** (always, better with cookies): scrapes Reddit search for hot discussions in the brand's niche from the past week. Works without auth but returns more results with cookies.
+   - **X/Twitter** (only with cookies): scrapes X search for trending conversations. Requires authenticated cookies because X blocks unauthenticated search.
+
+3. Parse the JSON output. It contains:
+   - `topic_count`: how many topics were found
+   - `topics`: array of topics, each with `title`, `url`, `source` (exa/reddit/x), `summary`, `text_preview`, and `relevance_score` (0-100 based on brand alignment)
+
+4. Present the top topics to the user in a table:
+   - Title
+   - Source (exa/reddit/x)
+   - Relevance score
+   - URL
+
+5. Ask: "Want me to run a recipe on any of these topics? Pick a number or say 'all' to generate content for the top 5."
+
+6. If the user picks topics, suggest matching recipes based on the source type:
+   - Exa news results: `paper-breakdown-insight`, `what-you-might-have-missed`
+   - Reddit threads: `reddit-short-case-study`
+   - X posts: `paper-breakdown-insight` (insight post format works well for X source material)
+   - GitHub repos: `demo-diagram-breakdown`
+
+7. Save the discovery results to `BASE_DIR/topics/<date>_<brand-name>.json`
+
+### Auto-discovery during brand creation
+
+After completing the brand graph wizard (all 6 questions answered and files saved), automatically run topic discovery:
+
+1. Tell the user: "Brand graph saved. Now discovering trending topics for <brand-name>..."
+2. Run the topic discovery script with the new brand directory
+3. Present the results as described above
+4. This gives the user immediate value: a brand graph plus content-ready topics in one flow
+
+## How to set up platform credentials
+
+When the user asks to set up credentials for Reddit or X:
+
+### Reddit cookies
+
+1. Tell the user: "To get better Reddit search results, I need your Reddit session cookies. Here's how:"
+   - Open Reddit in your browser and log in
+   - Open DevTools (F12) > Application > Cookies > reddit.com
+   - Export cookies as JSON (use a browser extension like "EditThisCookie" or "Cookie-Editor")
+   - Or provide the cookie values manually: `reddit_session`, `token_v2`
+
+2. Save the cookies to `BASE_DIR/creds/reddit-cookies.json` in Playwright cookie format:
+```json
+[
+  {"name": "reddit_session", "value": "<value>", "domain": ".reddit.com", "path": "/"},
+  {"name": "token_v2", "value": "<value>", "domain": ".reddit.com", "path": "/"}
+]
+```
+
+3. Create the creds directory if it doesn't exist: `mkdir -p BASE_DIR/creds`
+4. Add `creds/` to `.gitignore` to prevent committing cookies
+
+### X/Twitter cookies
+
+1. Tell the user: "X requires authentication for search. I need your X session cookies. Here's how:"
+   - Open X in your browser and log in
+   - Open DevTools (F12) > Application > Cookies > x.com
+   - Export cookies as JSON
+   - Key cookies needed: `auth_token`, `ct0`
+
+2. Save to `BASE_DIR/creds/x-cookies.json` in Playwright cookie format:
+```json
+[
+  {"name": "auth_token", "value": "<value>", "domain": ".x.com", "path": "/"},
+  {"name": "ct0", "value": "<value>", "domain": ".x.com", "path": "/"}
+]
+```
+
+### Data privacy note for credentials
+
+Cookies are stored locally in `BASE_DIR/creds/` and only used by the Playwright headless browser for scraping. They are never sent to Exa, fal.ai, or any other external service. Always add `creds/` to `.gitignore`.
+
 ## How to list recipes
 
 Read all `.yaml` files in `BASE_DIR/recipes/` (skip `_schema.yaml`). For each, show:
@@ -412,6 +500,8 @@ Create YAML files in `BASE_DIR/brand-graphs/<brand-name>/`:
 - `strategy.yaml`: goals, niche_keywords
 - `visual.yaml`: primary_color, accent_color (if provided)
 - `feedback.yaml`: empty file with `insights: []` (populated over time)
+
+After saving all files, automatically run topic discovery for the new brand (see "How to discover topics" > "Auto-discovery during brand creation").
 
 ## How to show a brand graph
 

@@ -10,6 +10,7 @@ dependencies = [
     "readabilipy>=0.2",
     "playwright>=1.49",
     "fal-client>=0.5",
+    "exa-py>=1.0",
 ]
 
 [dependency-groups]
