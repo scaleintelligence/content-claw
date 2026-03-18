@@ -1,7 +1,7 @@
 ---
 name: contentclaw
 description: |
-  Automated content generation engine. Transform source material (papers, podcasts, case studies) into platform-ready content using recipes and brand graphs. Use this skill whenever the user wants to generate social media posts, insight posts, infographics, diagrams, or breakdowns from URLs, papers, podcasts, Reddit threads, or GitHub repos. Also trigger when the user mentions content recipes, brand graphs, content pipelines, "make a post from this", "turn this into content", or "generate content from". Requires uv, FAL_KEY (image generation), and EXA_API_KEY (topic discovery) in .env.
+  Turn papers, podcasts, and case studies into publish-ready social posts, infographics, and diagrams. Discovers trending topics via Exa, generates content with spec-first recipes, creates images with fal.ai, and publishes to Reddit/X with engagement tracking. Trigger on: "make a post from this", "turn this into content", "generate content", "discover topics", content recipes, brand graphs.
 version: 0.0.1
 metadata:
   openclaw:
