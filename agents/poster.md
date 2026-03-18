@@ -27,6 +27,12 @@ Return a JSON object with the poster specification:
     "brand_name": "Brand name to display"
   },
   "model": "recraft-v4 | ideogram-v3 | flux-2 | flux-pro (default: ideogram-v3)",
+  "image_params": {
+    "rendering_speed": "TURBO | BALANCED | QUALITY (default: QUALITY)",
+    "style": "AUTO | GENERAL | REALISTIC | DESIGN (default: DESIGN)",
+    "negative_prompt": "what to avoid (optional)",
+    "seed": "integer for reproducibility (optional)"
+  },
   "text_fallback": "Plain text version of all poster content"
 }
 ```

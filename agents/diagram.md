@@ -35,6 +35,10 @@ Return a JSON object with the diagram specification:
   ],
   "ascii_fallback": "ASCII art version of the diagram for text-only platforms",
   "model": "recraft-v4 | ideogram-v3 | flux-2 | flux-pro (default: recraft-v4)",
+  "image_params": {
+    "background_color": "#FFFFFF (optional, recraft only)",
+    "seed": "integer for reproducibility (optional)"
+  },
   "source": "Original source attribution"
 }
 ```

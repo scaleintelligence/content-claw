@@ -25,6 +25,11 @@ Return a JSON object with the infographic specification:
     "tone": "professional | casual | technical"
   },
   "model": "recraft-v4 | ideogram-v3 | flux-2 | flux-pro (default: recraft-v4)",
+  "image_params": {
+    "background_color": "#FFFFFF (optional, recraft only)",
+    "seed": "integer for reproducibility (optional)",
+    "negative_prompt": "what to avoid (optional, ideogram only)"
+  },
   "text_fallback": "Plain text version of the infographic content for platforms that need it"
 }
 ```

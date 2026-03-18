@@ -135,7 +135,71 @@ MODEL_FOR_FORMAT = {
 DEFAULT_MODEL = "recraft-v4"
 
 
-def generate_image(prompt: str, output_path: str, size: str = "1024x1024", model: str | None = None) -> dict:
+def hex_to_rgb(hex_color: str) -> dict:
+    """Convert '#RRGGBB' to {'r': int, 'g': int, 'b': int}."""
+    h = hex_color.lstrip("#")
+    return {"r": int(h[0:2], 16), "g": int(h[2:4], 16), "b": int(h[4:6], 16)}
+
+
+def build_model_args(model_name: str, prompt: str, width: int, height: int, spec: dict | None = None) -> dict:
+    """Build model-specific fal.ai arguments from the spec."""
+    spec = spec or {}
+    style = spec.get("style", {})
+    primary_color = style.get("primary_color")
+    accent_color = style.get("accent_color")
+    image_params = spec.get("image_params", {})
+
+    base = {
+        "prompt": prompt,
+        "image_size": {"width": width, "height": height},
+        "num_images": 1,
+    }
+
+    if model_name == "recraft-v4":
+        # Recraft supports colors array and background_color
+        colors = []
+        if primary_color:
+            colors.append(hex_to_rgb(primary_color))
+        if accent_color:
+            colors.append(hex_to_rgb(accent_color))
+        if colors:
+            base["colors"] = colors
+        bg = image_params.get("background_color")
+        if bg:
+            base["background_color"] = hex_to_rgb(bg) if isinstance(bg, str) else bg
+
+    elif model_name == "ideogram-v3":
+        # Ideogram supports rendering_speed, style, negative_prompt, color_palette
+        base["rendering_speed"] = image_params.get("rendering_speed", "QUALITY")
+        base["style"] = image_params.get("style", "DESIGN")
+        base["expand_prompt"] = image_params.get("expand_prompt", True)
+        neg = image_params.get("negative_prompt")
+        if neg:
+            base["negative_prompt"] = neg
+        # Build color_palette from brand colors
+        if primary_color or accent_color:
+            members = []
+            if primary_color:
+                members.append({"hex_color": primary_color, "weight": 0.6})
+            if accent_color:
+                members.append({"hex_color": accent_color, "weight": 0.4})
+            base["color_palette"] = {"members": members}
+
+    elif model_name in ("flux-2", "flux-pro"):
+        # Flux supports guidance_scale, num_inference_steps, output_format
+        base["guidance_scale"] = image_params.get("guidance_scale", 5.0)
+        base["num_inference_steps"] = image_params.get("num_inference_steps", 40)
+        base["output_format"] = image_params.get("output_format", "png")
+
+    # Seed support for all models
+    seed = image_params.get("seed")
+    if seed is not None:
+        base["seed"] = seed
+
+    return base
+
+
+def generate_image(prompt: str, output_path: str, size: str = "1024x1024", model: str | None = None, spec: dict | None = None) -> dict:
     """Generate an image using fal.ai and save to output_path."""
     import fal_client
     import httpx
@@ -151,14 +215,9 @@ def generate_image(prompt: str, output_path: str, size: str = "1024x1024", model
 
     width, height = (int(d) for d in size.split("x"))
 
-    result = fal_client.subscribe(
-        fal_model,
-        arguments={
-            "prompt": prompt,
-            "image_size": {"width": width, "height": height},
-            "num_images": 1,
-        },
-    )
+    arguments = build_model_args(model_name, prompt, width, height, spec)
+
+    result = fal_client.subscribe(fal_model, arguments=arguments)
 
     image_url = result["images"][0]["url"]
 
@@ -199,6 +258,7 @@ def main():
         prompt = sys.argv[2]
         output_path = sys.argv[3]
         model = None
+        spec = None
     else:
         spec_path = sys.argv[1]
         output_path = sys.argv[2]
@@ -211,7 +271,7 @@ def main():
         model = spec.get("model") or MODEL_FOR_FORMAT.get(sub_format) or MODEL_FOR_FORMAT.get(layout)
 
     try:
-        result = generate_image(prompt, output_path, model=model)
+        result = generate_image(prompt, output_path, model=model, spec=spec)
         print(json.dumps(result, indent=2))
     except Exception as e:
         print(json.dumps({"error": str(e)}))
