@@ -1,7 +1,7 @@
 """
 Content Claw - Image Generator
 
-Takes an image spec (JSON from agent prompts) and generates an image using DALL-E.
+Takes an image spec (JSON from agent prompts) and generates an image using fal.ai.
 Saves the image to the specified output path.
 
 Usage:
@@ -9,7 +9,7 @@ Usage:
     uv run generate_image.py --prompt "description" <output-path>
 
 Environment:
-    OPENAI_API_KEY - Required. Set in .env file.
+    FAL_KEY - Required. Set in .env file.
 """
 
 import json
@@ -19,7 +19,7 @@ from pathlib import Path
 
 
 def spec_to_prompt(spec: dict) -> str:
-    """Convert an image spec JSON (from agent prompts) into a DALL-E prompt."""
+    """Convert an image spec JSON (from agent prompts) into an image generation prompt."""
     parts = []
 
     # Diagram type
@@ -113,29 +113,54 @@ def spec_to_prompt(spec: dict) -> str:
     return prompt
 
 
-def generate_image(prompt: str, output_path: str, size: str = "1024x1024") -> dict:
-    """Generate an image using DALL-E and save to output_path."""
-    from openai import OpenAI
+FAL_MODELS = {
+    "recraft-v4": "fal-ai/recraft/v4/pro/text-to-image",
+    "ideogram-v3": "fal-ai/ideogram/v3",
+    "flux-2": "fal-ai/flux-2-flex",
+    "flux-pro": "fal-ai/flux-pro/v1.1",
+}
 
-    api_key = os.getenv("OPENAI_API_KEY")
+# Model selection by content type:
+# - Recraft V4: best for infographics, diagrams, logos. Strong composition,
+#   lighting, and text rendering. #1 on HuggingFace benchmarks.
+# - Ideogram V3: best for posters and banners. Near-perfect typography,
+#   bold design.
+# - Flux 2: best for photorealistic content and general high-quality generation.
+MODEL_FOR_FORMAT = {
+    "infographic": "recraft-v4",
+    "diagram": "recraft-v4",
+    "poster": "ideogram-v3",
+}
+
+DEFAULT_MODEL = "recraft-v4"
+
+
+def generate_image(prompt: str, output_path: str, size: str = "1024x1024", model: str | None = None) -> dict:
+    """Generate an image using fal.ai and save to output_path."""
+    import fal_client
+    import httpx
+
+    api_key = os.getenv("FAL_KEY")
     if not api_key:
-        return {"error": "OPENAI_API_KEY not set. Add it to your .env file."}
+        return {"error": "FAL_KEY not set. Add it to your .env file."}
 
-    client = OpenAI(api_key=api_key)
+    os.environ["FAL_KEY"] = api_key
 
-    response = client.images.generate(
-        model="dall-e-3",
-        prompt=prompt,
-        n=1,
-        size=size,
-        quality="standard",
+    model_name = model or DEFAULT_MODEL
+    fal_model = FAL_MODELS.get(model_name, FAL_MODELS[DEFAULT_MODEL])
+
+    width, height = (int(d) for d in size.split("x"))
+
+    result = fal_client.subscribe(
+        fal_model,
+        arguments={
+            "prompt": prompt,
+            "image_size": {"width": width, "height": height},
+            "num_images": 1,
+        },
     )
 
-    image_url = response.data[0].url
-    revised_prompt = response.data[0].revised_prompt
-
-    # Download the image
-    import httpx
+    image_url = result["images"][0]["url"]
 
     img_resp = httpx.get(image_url, timeout=60)
     img_resp.raise_for_status()
@@ -147,7 +172,8 @@ def generate_image(prompt: str, output_path: str, size: str = "1024x1024") -> di
     return {
         "output_path": output_path,
         "size": size,
-        "revised_prompt": revised_prompt,
+        "model": model_name,
+        "fal_model": fal_model,
         "bytes": len(img_resp.content),
     }
 
@@ -172,15 +198,20 @@ def main():
     if sys.argv[1] == "--prompt":
         prompt = sys.argv[2]
         output_path = sys.argv[3]
+        model = None
     else:
         spec_path = sys.argv[1]
         output_path = sys.argv[2]
         with open(spec_path) as f:
             spec = json.load(f)
         prompt = spec_to_prompt(spec)
+        # Auto-select model from spec's sub_format or style.layout
+        sub_format = spec.get("sub_format", spec.get("diagram_type", ""))
+        layout = spec.get("style", {}).get("layout", "")
+        model = spec.get("model") or MODEL_FOR_FORMAT.get(sub_format) or MODEL_FOR_FORMAT.get(layout)
 
     try:
-        result = generate_image(prompt, output_path)
+        result = generate_image(prompt, output_path, model=model)
         print(json.dumps(result, indent=2))
     except Exception as e:
         print(json.dumps({"error": str(e)}))

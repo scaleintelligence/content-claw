@@ -10,6 +10,7 @@ metadata:
         - uv
       env:
         - OPENAI_API_KEY
+        - FAL_KEY
     primaryEnv: OPENAI_API_KEY
     emoji: "\U0001F980"
     homepage: https://github.com/content-claw/content-claw
@@ -161,6 +162,14 @@ Once specs are approved, render each block to its final output.
 1. Run: `cd BASE_DIR && uv run scripts/generate_image.py content/<run-dir>/<block-name>-spec.json content/<run-dir>/<block-name>.png`
 2. If image generation succeeds, show the user the image path
 3. If it fails (no API key, quota exceeded), fall back to the `text_fallback` from the spec and tell the user
+
+**Image model selection**: Each image spec can include a `"model"` field to control which fal.ai model generates the image. If omitted, the model is auto-selected based on the block type. Users can change the model in the spec during the review step (Step 6).
+
+Available models:
+- `recraft-v4`: Best for infographics, diagrams, and structured layouts. Strong text rendering and composition. Default for most image blocks.
+- `ideogram-v3`: Best for posters and banners. Near-perfect typography, bold design. Default for poster blocks.
+- `flux-2`: Best for photorealistic content and general high-quality generation.
+- `flux-pro`: High-quality general purpose generation with strong artistic fidelity.
 
 ### Step 8: Validate each content block
 

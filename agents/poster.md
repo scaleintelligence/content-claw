@@ -26,6 +26,7 @@ Return a JSON object with the poster specification:
     "logo": true,
     "brand_name": "Brand name to display"
   },
+  "model": "recraft-v4 | ideogram-v3 | flux-2 | flux-pro (default: ideogram-v3)",
   "text_fallback": "Plain text version of all poster content"
 }
 ```

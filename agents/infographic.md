@@ -24,6 +24,7 @@ Return a JSON object with the infographic specification:
     "accent_color": "#hex or null",
     "tone": "professional | casual | technical"
   },
+  "model": "recraft-v4 | ideogram-v3 | flux-2 | flux-pro (default: recraft-v4)",
   "text_fallback": "Plain text version of the infographic content for platforms that need it"
 }
 ```

@@ -9,6 +9,7 @@ dependencies = [
     "readabilipy>=0.2",
     "playwright>=1.49",
     "openai>=1.50",
+    "fal-client>=0.5",
 ]
 
 [dependency-groups]
