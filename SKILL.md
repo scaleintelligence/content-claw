@@ -1,7 +1,7 @@
 ---
 name: content-claw
 description: |
-  Automated content generation engine. Transform source material (papers, podcasts, case studies) into platform-ready content using recipes and brand graphs. Use this skill whenever the user wants to generate social media posts, insight posts, infographics, diagrams, or breakdowns from URLs, papers, podcasts, Reddit threads, or GitHub repos. Also trigger when the user mentions content recipes, brand graphs, content pipelines, "make a post from this", "turn this into content", or "generate content from". Requires uv and FAL_KEY in .env for image generation.
+  Automated content generation engine. Transform source material (papers, podcasts, case studies) into platform-ready content using recipes and brand graphs. Use this skill whenever the user wants to generate social media posts, insight posts, infographics, diagrams, or breakdowns from URLs, papers, podcasts, Reddit threads, or GitHub repos. Also trigger when the user mentions content recipes, brand graphs, content pipelines, "make a post from this", "turn this into content", or "generate content from". Requires uv, FAL_KEY (image generation), and EXA_API_KEY (topic discovery) in .env.
 version: 0.0.1
 metadata:
   openclaw:
@@ -63,13 +63,23 @@ This skill only reads and writes files within `BASE_DIR`. Do not read, write, or
 
 ## Data privacy notice
 
-This skill sends data to external services during execution:
-- **Source extraction**: Playwright renders pages in a headless browser locally. No source content is sent externally during extraction.
-- **Content synthesis**: Prerequisite outputs (summaries, key points) are processed by the host LLM running the skill (Claude, OpenClaw, NemoClaw). No external LLM calls are made. All text generation happens locally through the host agent.
-- **Image generation**: Image specs (titles, section headings, style params) are sent to **fal.ai** to generate images. No full source text is sent, only the condensed spec.
-- **API keys**: `FAL_KEY` is the only required key, used for fal.ai image generation. It is loaded from `.env` and never logged or transmitted beyond the fal.ai API.
+This skill sends data to external services and uses browser automation during execution:
 
-If you are working with sensitive or internal content, review which URLs you provide as sources and consider using scoped API keys.
+**API keys required:**
+- `FAL_KEY`: sent to fal.ai for image generation. Only condensed image specs (titles, section headings, style params) are transmitted. No full source text.
+- `EXA_API_KEY`: sent to exa.ai for topic discovery searches. Only search queries derived from brand keywords are transmitted. No source content.
+
+Both keys are loaded from `.env` and never logged or transmitted beyond their respective APIs. Use scoped, usage-limited keys when possible.
+
+**Source extraction**: Playwright renders pages in a headless browser locally. No source content is sent externally during extraction. The extractor uses stealth settings (hides webdriver property, custom user-agent) to avoid bot detection. This is standard for headless scraping but may contravene some sites' terms of service.
+
+**Content synthesis**: All text generation (summaries, key points, posts) is handled by the host LLM running the skill (Claude, OpenClaw, NemoClaw). No external LLM calls are made.
+
+**Platform cookies (optional)**: If you provide Reddit or X cookies for authenticated scraping and publishing, those cookies are stored locally in `BASE_DIR/creds/` and only used by the local Playwright browser. They are never sent to Exa, fal.ai, or any other external service. Providing cookies grants the skill the ability to act as your account on those platforms for searching, posting, and reading engagement metrics. Only provide cookies if you trust the code and understand this scope.
+
+**Publishing**: The publish script uses Playwright with your cookies to fill and submit post forms on Reddit/X. Review `scripts/publish.py` before enabling publishing. A dry-run mode is available to preview without posting.
+
+If you are working with sensitive or internal content, avoid passing internal URLs as sources and run the skill in a sandboxed environment.
 
 ## Commands
 
