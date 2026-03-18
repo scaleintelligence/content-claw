@@ -432,46 +432,34 @@ After completing the brand graph wizard (all 6 questions answered and files save
 
 ## How to set up platform credentials
 
-When the user asks to set up credentials for Reddit or X:
+The easiest way to set up credentials is using the `/setup-browser-cookies` skill (from gstack). This imports cookies directly from the user's real browser without any manual export.
 
-### Reddit cookies
+### Using /setup-browser-cookies (recommended)
 
-1. Tell the user: "To get better Reddit search results, I need your Reddit session cookies. Here's how:"
-   - Open Reddit in your browser and log in
-   - Open DevTools (F12) > Application > Cookies > reddit.com
-   - Export cookies as JSON (use a browser extension like "EditThisCookie" or "Cookie-Editor")
-   - Or provide the cookie values manually: `reddit_session`, `token_v2`
+1. Tell the user: "Let's import your browser cookies for Reddit and X. Run `/setup-browser-cookies`."
+2. The skill opens an interactive picker UI in the browser
+3. User selects their browser (Chrome, Arc, Brave, Edge)
+4. User searches for and imports cookies for `reddit.com` and `x.com`
+5. Cookies are automatically available to the `/browse` headless browser and Playwright sessions
 
-2. Save the cookies to `BASE_DIR/creds/reddit-cookies.json` in Playwright cookie format:
-```json
-[
-  {"name": "reddit_session", "value": "<value>", "domain": ".reddit.com", "path": "/"},
-  {"name": "token_v2", "value": "<value>", "domain": ".reddit.com", "path": "/"}
-]
-```
+This is the recommended approach because it handles decryption, session tokens, and cookie formats automatically.
 
-3. Create the creds directory if it doesn't exist: `mkdir -p BASE_DIR/creds`
-4. Add `creds/` to `.gitignore` to prevent committing cookies
+### Manual cookie setup (fallback)
 
-### X/Twitter cookies
+If `/setup-browser-cookies` is not available:
 
-1. Tell the user: "X requires authentication for search. I need your X session cookies. Here's how:"
-   - Open X in your browser and log in
-   - Open DevTools (F12) > Application > Cookies > x.com
-   - Export cookies as JSON
-   - Key cookies needed: `auth_token`, `ct0`
+1. Open the platform in your browser and log in
+2. Use a cookie export extension (EditThisCookie, Cookie-Editor) to export as JSON
+3. Save to `BASE_DIR/creds/reddit-cookies.json` or `BASE_DIR/creds/x-cookies.json`
+4. Format: Playwright cookie array `[{"name": "...", "value": "...", "domain": "...", "path": "/"}]`
 
-2. Save to `BASE_DIR/creds/x-cookies.json` in Playwright cookie format:
-```json
-[
-  {"name": "auth_token", "value": "<value>", "domain": ".x.com", "path": "/"},
-  {"name": "ct0", "value": "<value>", "domain": ".x.com", "path": "/"}
-]
-```
+Key cookies needed:
+- **Reddit**: `reddit_session`, `token_v2`
+- **X**: `auth_token`, `ct0`
 
 ### Data privacy note for credentials
 
-Cookies are stored locally in `BASE_DIR/creds/` and only used by the Playwright headless browser for scraping. They are never sent to Exa, fal.ai, or any other external service. Always add `creds/` to `.gitignore`.
+Cookies are stored locally and only used by the headless browser for scraping and publishing. They are never sent to Exa, fal.ai, or any other external service. The `creds/` directory is gitignored.
 
 ## How to list recipes
 
