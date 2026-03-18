@@ -246,14 +246,18 @@ def main():
         )
         sys.exit(1)
 
-    # Load .env if present
+    # Load only FAL_KEY from .env (scoped loader)
+    allowed = {"FAL_KEY"}
     env_path = Path(__file__).parent.parent / ".env"
     if env_path.exists():
         for line in env_path.read_text().splitlines():
             line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, _, value = line.partition("=")
-                os.environ.setdefault(key.strip(), value.strip())
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if key in allowed:
+                os.environ.setdefault(key, value.strip())
 
     if sys.argv[1] == "--prompt":
         prompt = sys.argv[2]

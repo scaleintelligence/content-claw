@@ -19,14 +19,19 @@ from pathlib import Path
 
 
 def load_env():
-    """Load .env from project root."""
+    """Load only declared keys from .env (scoped to FAL_KEY, EXA_API_KEY)."""
+    allowed = {"FAL_KEY", "EXA_API_KEY"}
     env_path = Path(__file__).parent.parent / ".env"
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, _, value = line.partition("=")
-                os.environ.setdefault(key.strip(), value.strip())
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key in allowed:
+            os.environ.setdefault(key, value.strip())
 
 
 def check_reddit_post(url: str, cookie_path: str | None = None) -> dict:

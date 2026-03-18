@@ -24,14 +24,19 @@ from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
 
 
 def load_env():
-    """Load .env from project root."""
+    """Load only declared keys from .env (scoped to FAL_KEY, EXA_API_KEY)."""
+    allowed = {"FAL_KEY", "EXA_API_KEY"}
     env_path = Path(__file__).parent.parent / ".env"
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, _, value = line.partition("=")
-                os.environ.setdefault(key.strip(), value.strip())
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key in allowed:
+            os.environ.setdefault(key, value.strip())
 
 
 def add_utm(url: str, source: str, medium: str, campaign: str) -> str:
