@@ -5,7 +5,7 @@ description: |
   Trigger on: "make a post from this", "turn this into content", "generate content", "/dc",
   "deepcontent", any URL the user wants turned into social posts, "discover topics",
   "show my posts", "what should I write about".
-version: 1.3.1
+version: 1.3.2
 metadata:
   openclaw:
     requires:
@@ -105,15 +105,14 @@ When user asks to see, edit, or delete their content:
    - Update: use `POST /api/v1/brands/{id}/refill` with `{source}` to refresh the existing brand
    - New: proceed with creation below
 2. `POST /api/v1/brand-onboarding/generate` with `{name, source}` where source is a URL or description
-3. Response includes brand identity (name, industry, description, positioning, audience, voice). Show a summary:
+3. Response includes brand identity and an `id` (or `brand_graph_id`). Show a summary:
    - Name and industry
    - One-line description
    - Target audience
    - Voice/tone
-   - Edit link: `{FRONTEND_URL}/dashboard/brands/{id}`
-4. Brand is created in "draft" status. Confirm with `POST /api/v1/brand-onboarding/{id}/confirm` to publish it.
-5. Ask which platforms (linkedin, x, reddit)
-6. Tell user they can review and edit the full brand graph at the link
+4. ALWAYS include this link in the response: `{FRONTEND_URL}/dashboard/brands/{id}` (replace {id} with the actual brand ID). This is required, not optional.
+5. Brand is created in "draft" status. Confirm with `POST /api/v1/brand-onboarding/{id}/confirm` to publish it.
+6. Ask which platforms (linkedin, x, reddit)
 
 ### List brands
 
