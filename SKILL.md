@@ -5,7 +5,7 @@ description: |
   Trigger on: "make a post from this", "turn this into content", "generate content", "/dc",
   "deepcontent", any URL the user wants turned into social posts, "discover topics",
   "show my posts", "what should I write about".
-version: 1.3.0
+version: 1.3.1
 metadata:
   openclaw:
     requires:
@@ -57,8 +57,11 @@ Dashboard: https://deepcontent-frontend.scaleintelligence.workers.dev/dashboard
 ### Quick generate (single platform)
 
 For "make me a LinkedIn post from this URL" type requests:
-1. `GET /api/v1/brands` to find the user's brand
-2. If no brand, guide them to create one first. Link: `{FRONTEND_URL}/dashboard/brands/onboarding`
+1. `GET /api/v1/brands` to resolve which brand to use:
+   - No brands: guide them to create one first. Link: `{FRONTEND_URL}/dashboard/brands/onboarding`
+   - One brand: use it automatically
+   - Multiple brands: ask the user which one. Show names as options.
+   - If user specified a brand by name, match it
 3. `POST /api/v1/{platform}/generate` with `{url, brand_graph_id}` (SSE). Platform: linkedin, reddit, or x.
    - Reddit supports `{subreddit}` param for targeting a specific subreddit
    - X supports `{format: "thread"}` for multi-tweet threads instead of single posts
@@ -81,7 +84,7 @@ Use quick generate for simple "one post" requests. Use full synthesis when the u
 ### Discover topics
 
 When user asks "what should I write about" or "find me topics":
-1. `GET /api/v1/brands` to find the user's brand
+1. `GET /api/v1/brands` to resolve which brand (same logic as quick generate: one brand = auto, multiple = ask)
 2. `POST /api/v1/topics/generate` with `{brand_graph_id}` (SSE). Discovers trending topics aligned with the brand.
 3. Show topics with title, relevance, and source URL
 4. Ask: "Want me to generate content from any of these?"
