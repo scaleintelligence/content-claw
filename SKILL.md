@@ -3,7 +3,7 @@ name: deepcontentskill23223
 description: |
   AI content marketing pipeline. Generate branded LinkedIn, X, and Reddit posts from any URL.
   Trigger on: "make a post from this", "turn this into content", "generate content", "/dc", "deepcontent", any URL the user wants turned into social posts.
-version: 1.0.1
+version: 1.1.0
 metadata:
   openclaw:
     requires:
@@ -51,15 +51,27 @@ Dashboard: https://deepcontent-frontend.scaleintelligence.workers.dev/dashboard
 4. Store the returned api_key for the session
 5. If user needs to sign up first: `{FRONTEND_URL}/sign-up`
 
-### Generate content
+### Quick generate (single platform)
 
+For "make me a LinkedIn post from this URL" type requests:
 1. `GET /api/v1/brands` to find the user's brand
 2. If no brand, guide them to create one first. Link: `{FRONTEND_URL}/dashboard/brands/onboarding`
-3. `POST /api/v1/linkedin/generate` with `{url, brand_graph_id}` (SSE)
-4. Same for `/api/v1/reddit/generate` and `/api/v1/x/generate`
-5. Show each post with platform name and content preview
-6. The SSE `done` event includes `post_id`. Link each post to: `{FRONTEND_URL}/dashboard/history/{post_id}`
-7. Show credits from `GET /api/v1/billing/balance`. Link to top up: `{FRONTEND_URL}/dashboard/billing`
+3. `POST /api/v1/{platform}/generate` with `{url, brand_graph_id}` (SSE). Platform is linkedin, reddit, or x.
+4. Show the post content
+5. The SSE `done` event includes `post_id`. Link to: `{FRONTEND_URL}/dashboard/history/{post_id}`
+6. Show credits from `GET /api/v1/billing/balance`. Link to top up: `{FRONTEND_URL}/dashboard/billing`
+
+### Full synthesis (recipe-based, multi-block)
+
+For richer content or when user wants multiple outputs from one source:
+1. `GET /api/v1/recipe-graphs` to list available recipes. Show names so user can pick.
+2. `POST /api/v1/enrichment/prepare` with `{recipe_graph_id, source_content, brand_graph_id?}` where source_content is the URL or text. Returns a synthesis request with an `id`.
+3. `POST /api/v1/synthesis/run` with `{synthesis_request_id}` to kick off generation.
+4. Poll `GET /api/v1/synthesis/status/{id}` until status is "completed".
+5. Show the generated content blocks.
+6. Link to: `{FRONTEND_URL}/dashboard/synthesis`
+
+Use quick generate for simple "one post" requests. Use full synthesis when the user wants structured multi-block output, or asks to "run a recipe".
 
 ### Create a brand
 
