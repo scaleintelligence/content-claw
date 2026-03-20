@@ -2,8 +2,10 @@
 name: deepcontentskill23223
 description: |
   AI content marketing pipeline. Generate branded LinkedIn, X, and Reddit posts from any URL.
-  Trigger on: "make a post from this", "turn this into content", "generate content", "/dc", "deepcontent", any URL the user wants turned into social posts.
-version: 1.2.0
+  Trigger on: "make a post from this", "turn this into content", "generate content", "/dc",
+  "deepcontent", any URL the user wants turned into social posts, "discover topics",
+  "show my posts", "what should I write about".
+version: 1.3.0
 metadata:
   openclaw:
     requires:
@@ -38,8 +40,9 @@ Dashboard: https://deepcontent-frontend.scaleintelligence.workers.dev/dashboard
 
 - User shares a URL and wants social posts
 - User says "make a post", "generate content", "turn this into a LinkedIn post"
-- User says "/dc" followed by a URL
-- User asks about their brands, credits, or content history
+- User asks to discover topics or find content ideas
+- User asks about their brands, credits, posts, or content history
+- User wants to manage or review generated content
 
 ## Flows
 
@@ -56,7 +59,9 @@ Dashboard: https://deepcontent-frontend.scaleintelligence.workers.dev/dashboard
 For "make me a LinkedIn post from this URL" type requests:
 1. `GET /api/v1/brands` to find the user's brand
 2. If no brand, guide them to create one first. Link: `{FRONTEND_URL}/dashboard/brands/onboarding`
-3. `POST /api/v1/{platform}/generate` with `{url, brand_graph_id}` (SSE). Platform is linkedin, reddit, or x.
+3. `POST /api/v1/{platform}/generate` with `{url, brand_graph_id}` (SSE). Platform: linkedin, reddit, or x.
+   - Reddit supports `{subreddit}` param for targeting a specific subreddit
+   - X supports `{format: "thread"}` for multi-tweet threads instead of single posts
 4. Show the post content
 5. The SSE `done` event includes `post_id`. Link to: `{FRONTEND_URL}/dashboard/history/{post_id}`
 6. Show credits from `GET /api/v1/billing/balance`. Link to top up: `{FRONTEND_URL}/dashboard/billing`
@@ -73,20 +78,39 @@ For richer content or when user wants multiple outputs from one source:
 
 Use quick generate for simple "one post" requests. Use full synthesis when the user wants structured multi-block output, or asks to "run a recipe".
 
+### Discover topics
+
+When user asks "what should I write about" or "find me topics":
+1. `GET /api/v1/brands` to find the user's brand
+2. `POST /api/v1/topics/generate` with `{brand_graph_id}` (SSE). Discovers trending topics aligned with the brand.
+3. Show topics with title, relevance, and source URL
+4. Ask: "Want me to generate content from any of these?"
+5. If yes, feed the topic URL into quick generate or full synthesis
+6. Link to: `{FRONTEND_URL}/dashboard/topics`
+
+### Manage posts
+
+When user asks to see, edit, or delete their content:
+- List posts: `GET /api/v1/{platform}/posts` (platform: linkedin, reddit, x). Shows recent posts with status.
+- Edit a post: `PATCH /api/v1/{platform}/posts/{id}` with `{body, title?}`
+- Delete a post: `DELETE /api/v1/{platform}/posts/{id}`
+- Link to manage all: `{FRONTEND_URL}/dashboard/history`
+
 ### Create a brand
 
 1. First `GET /api/v1/brands` and check if a brand with a similar name or URL already exists. If it does, ask the user: "You already have a brand called {name}. Update it, or create a new one?"
    - Update: use `POST /api/v1/brands/{id}/refill` with `{source}` to refresh the existing brand
    - New: proceed with creation below
 2. `POST /api/v1/brand-onboarding/generate` with `{name, source}` where source is a URL or description
-2. Response includes brand identity (name, industry, description, positioning, audience, voice). Show a summary:
+3. Response includes brand identity (name, industry, description, positioning, audience, voice). Show a summary:
    - Name and industry
    - One-line description
    - Target audience
    - Voice/tone
    - Edit link: `{FRONTEND_URL}/dashboard/brands/{id}`
-3. Ask which platforms (linkedin, x, reddit)
-4. Tell user they can review and edit the full brand graph at the link
+4. Brand is created in "draft" status. Confirm with `POST /api/v1/brand-onboarding/{id}/confirm` to publish it.
+5. Ask which platforms (linkedin, x, reddit)
+6. Tell user they can review and edit the full brand graph at the link
 
 ### List brands
 
@@ -106,12 +130,21 @@ When user just wants to see what's on a page (not generate content):
 1. `POST /api/v1/scrape/detect` with `{url}`
 2. Show a summary of what was extracted
 
+### Billing and upgrade
+
+When user asks about credits, pricing, or upgrading:
+1. `GET /api/v1/billing/balance` for current credits
+2. `GET /api/v1/billing/plan` for current plan
+3. To upgrade: link to `{FRONTEND_URL}/dashboard/billing`
+
 ### Help
 
 When the user is lost, show what they can do:
 - Generate content: share a URL
 - Create a brand: "create a brand from [url or description]"
+- Discover topics: "what should I write about"
 - List brands: "show my brands"
+- See posts: "show my recent posts"
 - Check status: "how many credits do I have"
 - Invite someone: "invite john@example.com as a member"
 - Dashboard: `{FRONTEND_URL}/dashboard`
