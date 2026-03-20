@@ -3,7 +3,7 @@ name: deepcontentskill23223
 description: |
   AI content marketing pipeline. Generate branded LinkedIn, X, and Reddit posts from any URL.
   Trigger on: "make a post from this", "turn this into content", "generate content", "/dc", "deepcontent", any URL the user wants turned into social posts.
-version: 0.9.0
+version: 1.0.0
 metadata:
   openclaw:
     requires:
@@ -78,6 +78,28 @@ Dashboard: https://deepcontent-frontend.scaleintelligence.workers.dev/dashboard
 1. `GET /api/v1/brands`
 2. Show each brand name and industry
 3. Link to manage: `{FRONTEND_URL}/dashboard/brands`
+
+### Invite a team member
+
+1. `POST /api/v1/orgs/{orgId}/invite` with `{email, role}` where role is "admin", "member", or "viewer"
+2. Confirm: "{email} invited as {role}. They'll get an email to join."
+3. Link to manage team: `{FRONTEND_URL}/dashboard/settings`
+
+### Scrape a URL
+
+When user just wants to see what's on a page (not generate content):
+1. `POST /api/v1/scrape/detect` with `{url}`
+2. Show a summary of what was extracted
+
+### Help
+
+When the user is lost, show what they can do:
+- Generate content: share a URL
+- Create a brand: "create a brand from [url or description]"
+- List brands: "show my brands"
+- Check status: "how many credits do I have"
+- Invite someone: "invite john@example.com as a member"
+- Dashboard: `{FRONTEND_URL}/dashboard`
 
 ### Status
 
