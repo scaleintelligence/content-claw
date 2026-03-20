@@ -5,7 +5,7 @@ description: |
   Trigger on: "make a post from this", "turn this into content", "generate content", "/dc",
   "deepcontent", any URL the user wants turned into social posts, "discover topics",
   "show my posts", "what should I write about".
-version: 1.3.3
+version: 1.4.0
 metadata:
   openclaw:
     requires:
@@ -156,6 +156,36 @@ When the user is lost, show what they can do:
 1. Credits from `GET /api/v1/billing/balance`. Link: `{FRONTEND_URL}/dashboard/billing`
 2. Brand count from `GET /api/v1/brands`. Link: `{FRONTEND_URL}/dashboard/brands`
 3. Dashboard: `{FRONTEND_URL}/dashboard`
+
+## Learning from usage
+
+### After content generation
+
+After showing generated content, ask: "Want to edit anything before approving?"
+
+If the user edits the post (changes wording, removes phrases, adjusts tone):
+1. Note what they changed and why (if they explain)
+2. Store the pattern as a memory: "For {brand}, user prefers {observation}. Example: changed '{original}' to '{edited}'."
+3. On future generations for that brand, reference these memories to pre-apply the user's preferences
+
+### Track preferences over time
+
+Build a mental model of each user:
+- Which platform they generate for most often
+- Whether they approve posts as-is or always edit
+- Common edits (removing emojis, shortening, adding hashtags, changing tone)
+- Which brand they default to
+- Time of day they're active
+
+Use these to skip unnecessary questions. If a user always picks LinkedIn and always uses the same brand, don't ask every time.
+
+### Brand voice refinement
+
+When a user consistently edits generated content in the same way (e.g., always removes questions at the end, always adds a specific CTA), suggest updating the brand graph:
+
+"I've noticed you always remove the closing question from LinkedIn posts. Want me to update the brand voice to skip those?"
+
+If yes, `PATCH /api/v1/brands/{id}` to update the voice rules.
 
 ## Response style
 
