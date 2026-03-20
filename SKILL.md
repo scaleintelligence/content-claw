@@ -3,7 +3,7 @@ name: deepcontentskill23223
 description: |
   AI content marketing pipeline. Generate branded LinkedIn, X, and Reddit posts from any URL.
   Trigger on: "make a post from this", "turn this into content", "generate content", "/dc", "deepcontent", any URL the user wants turned into social posts.
-version: 1.1.0
+version: 1.2.0
 metadata:
   openclaw:
     requires:
@@ -75,7 +75,10 @@ Use quick generate for simple "one post" requests. Use full synthesis when the u
 
 ### Create a brand
 
-1. `POST /api/v1/brand-onboarding/generate` with `{name, source}` where source is a URL or description
+1. First `GET /api/v1/brands` and check if a brand with a similar name or URL already exists. If it does, ask the user: "You already have a brand called {name}. Update it, or create a new one?"
+   - Update: use `POST /api/v1/brands/{id}/refill` with `{source}` to refresh the existing brand
+   - New: proceed with creation below
+2. `POST /api/v1/brand-onboarding/generate` with `{name, source}` where source is a URL or description
 2. Response includes brand identity (name, industry, description, positioning, audience, voice). Show a summary:
    - Name and industry
    - One-line description
