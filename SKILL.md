@@ -5,7 +5,7 @@ description: |
   Trigger on: "make a post from this", "turn this into content", "generate content", "/dc",
   "deepcontent", any URL the user wants turned into social posts, "discover topics",
   "show my posts", "what should I write about".
-version: 1.3.2
+version: 1.3.3
 metadata:
   openclaw:
     requires:
@@ -104,7 +104,7 @@ When user asks to see, edit, or delete their content:
 1. First `GET /api/v1/brands` and check if a brand with a similar name or URL already exists. If it does, ask the user: "You already have a brand called {name}. Update it, or create a new one?"
    - Update: use `POST /api/v1/brands/{id}/refill` with `{source}` to refresh the existing brand
    - New: proceed with creation below
-2. `POST /api/v1/brand-onboarding/generate` with `{name, source}` where source is a URL or description
+2. `POST /api/v1/brand-onboarding/generate` with `{name, source}` where source is a URL or description. This endpoint takes 30-60 seconds (scrapes + AI analysis). Use `--max-time 120` if calling via curl.
 3. Response includes brand identity and an `id` (or `brand_graph_id`). Show a summary:
    - Name and industry
    - One-line description
