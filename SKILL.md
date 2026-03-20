@@ -3,7 +3,7 @@ name: deepcontentskill23223
 description: |
   AI content marketing pipeline. Generate branded LinkedIn, X, and Reddit posts from any URL.
   Trigger on: "make a post from this", "turn this into content", "generate content", "/dc", "deepcontent", any URL the user wants turned into social posts.
-version: 0.6.0
+version: 0.9.0
 metadata:
   openclaw:
     requires:
