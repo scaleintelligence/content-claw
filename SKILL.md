@@ -5,7 +5,7 @@ description: |
   Trigger on: "make a post from this", "turn this into content", "generate content", "/dc",
   "deepcontent", any URL the user wants turned into social posts, "discover topics",
   "show my posts", "what should I write about".
-version: 1.5.0
+version: 1.6.0
 metadata:
   openclaw:
     requires:
@@ -98,7 +98,7 @@ When user asks to see, edit, or delete their content:
 - List posts: `GET /api/v1/{platform}/posts` (platform: linkedin, reddit, x). Shows recent posts with status.
 - Edit a post: `PATCH /api/v1/{platform}/posts/{id}` with `{body, title?}`
 - Delete a post: `DELETE /api/v1/{platform}/posts/{id}`
-- Link to manage all: `{FRONTEND_URL}/dashboard/history`
+- Link to manage all: `{FRONTEND_URL}/dashboard/linkedin` (or `/dashboard/reddit`, `/dashboard/x` depending on platform)
 
 ### Create a brand
 
@@ -123,9 +123,10 @@ When user asks to see, edit, or delete their content:
 
 ### Invite a team member
 
-1. `POST /api/v1/orgs/{orgId}/invite` with `{email, role}` where role is "admin", "member", or "viewer"
-2. Confirm: "{email} invited as {role}. They'll get an email to join."
-3. Link to manage team: `{FRONTEND_URL}/dashboard/settings`
+1. Get the org ID from `GET /api/v1/auth/me` (returns `orgId` in the response).
+2. `POST /api/v1/orgs/{orgId}/invite` with `{email, role}` where role is "admin", "member", or "viewer"
+3. Confirm: "{email} invited as {role}. They'll get an email to join."
+4. Link to manage team: `{FRONTEND_URL}/dashboard/settings`
 
 ### Scrape a URL
 
