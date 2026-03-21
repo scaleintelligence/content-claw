@@ -5,7 +5,7 @@ description: |
   Trigger on: "make a post from this", "turn this into content", "generate content", "/dc",
   "deepcontent", any URL the user wants turned into social posts, "discover topics",
   "show my posts", "what should I write about".
-version: 1.4.1
+version: 1.4.2
 metadata:
   openclaw:
     requires:
@@ -86,10 +86,11 @@ Use quick generate for simple "one post" requests. Use full synthesis when the u
 When user asks "what should I write about" or "find me topics":
 1. `GET /api/v1/brands` to resolve which brand (same logic as quick generate: one brand = auto, multiple = ask)
 2. `POST /api/v1/topics/generate` with `{brand_graph_id}` (SSE). Discovers trending topics aligned with the brand. This endpoint scrapes multiple sources then runs Claude analysis, so it takes 60-120 seconds. Use `--max-time 180` if calling via curl.
-3. Show topics with title, relevance, and source URL
-4. Ask: "Want me to generate content from any of these?"
-5. If yes, feed the topic URL into quick generate or full synthesis
-6. Link to: `{FRONTEND_URL}/dashboard/topics`
+3. Show topics with title, relevance, and source URL. Each topic has a `topic_id` in the SSE events.
+4. Link each topic to: `{FRONTEND_URL}/dashboard/topics/{topic_id}`
+5. Link to all topics: `{FRONTEND_URL}/dashboard/topics`
+6. Ask: "Want me to generate content from any of these?"
+7. If yes, feed the topic URL into quick generate or full synthesis
 
 ### Manage posts
 
