@@ -5,7 +5,7 @@ description: |
   Trigger on: "make a post from this", "turn this into content", "generate content", "/dc",
   "deepcontent", any URL the user wants turned into social posts, "discover topics",
   "show my posts", "what should I write about".
-version: 1.4.2
+version: 1.4.3
 metadata:
   openclaw:
     requires:
@@ -66,7 +66,7 @@ For "make me a LinkedIn post from this URL" type requests:
    - Reddit supports `{subreddit}` param for targeting a specific subreddit
    - X supports `{format: "thread"}` for multi-tweet threads instead of single posts
 4. Show the post content
-5. The SSE `done` event includes `post_id`. Link to: `{FRONTEND_URL}/dashboard/history/{post_id}`
+5. The SSE `done` event includes `post_id`. Link to the platform page: `{FRONTEND_URL}/dashboard/{platform}` (e.g. `/dashboard/linkedin`, `/dashboard/reddit`, `/dashboard/x`)
 6. Show credits from `GET /api/v1/billing/balance`. Link to top up: `{FRONTEND_URL}/dashboard/billing`
 
 ### Full synthesis (recipe-based, multi-block)
